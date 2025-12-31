@@ -4,17 +4,27 @@ import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { generatePagination } from '@/app/lib/utils';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 export default function Pagination({ totalPages }: { totalPages: number }) {
   // NOTE: Uncomment this code in Chapter 10
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentPage = Number(searchParams.get('page')) || 1;
+  const allPages = generatePagination(currentPage, totalPages);
 
-  // const allPages = generatePagination(currentPage, totalPages);
+  const createPageURL = (pageNumber: number | string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('page', pageNumber.toString());
+    return `${pathname}?${params.toString()}`;
+  };
+  
 
   return (
     <>
       {/*  NOTE: Uncomment this code in Chapter 10 */}
 
-      {/* <div className="inline-flex">
+      <div className="inline-flex">
         <PaginationArrow
           direction="left"
           href={createPageURL(currentPage - 1)}
@@ -47,7 +57,7 @@ export default function Pagination({ totalPages }: { totalPages: number }) {
           href={createPageURL(currentPage + 1)}
           isDisabled={currentPage >= totalPages}
         />
-      </div> */}
+      </div>
     </>
   );
 }
@@ -64,13 +74,14 @@ function PaginationNumber({
   isActive: boolean;
 }) {
   const className = clsx(
-    'flex h-10 w-10 items-center justify-center text-sm border',
+    'flex h-10 w-10 items-center justify-center border border-slate-800 bg-slate-900 text-sm text-slate-200 transition',
     {
       'rounded-l-md': position === 'first' || position === 'single',
       'rounded-r-md': position === 'last' || position === 'single',
-      'z-10 bg-blue-600 border-blue-600 text-white': isActive,
-      'hover:bg-gray-100': !isActive && position !== 'middle',
-      'text-gray-300': position === 'middle',
+      'z-10 border-sky-400/70 bg-slate-800 text-white shadow-[0_0_0_1px_rgba(56,189,248,0.35)]':
+        isActive,
+      'hover:border-sky-400/50 hover:bg-slate-800': !isActive && position !== 'middle',
+      'text-slate-500': position === 'middle',
     },
   );
 
@@ -93,10 +104,10 @@ function PaginationArrow({
   isDisabled?: boolean;
 }) {
   const className = clsx(
-    'flex h-10 w-10 items-center justify-center rounded-md border',
+    'flex h-10 w-10 items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-slate-200 transition',
     {
-      'pointer-events-none text-gray-300': isDisabled,
-      'hover:bg-gray-100': !isDisabled,
+      'pointer-events-none text-slate-600': isDisabled,
+      'hover:border-sky-400/50 hover:bg-slate-800': !isDisabled,
       'mr-2 md:mr-4': direction === 'left',
       'ml-2 md:ml-4': direction === 'right',
     },

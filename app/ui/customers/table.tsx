@@ -20,14 +20,14 @@ export default async function CustomersTable({
       <div className="mt-6 flow-root">
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full align-middle">
-            <div className="overflow-hidden rounded-md bg-gray-50 p-2 md:pt-0">
+            <div className="overflow-hidden rounded-md border border-slate-800 bg-slate-900/80 p-2 md:pt-0">
               <div className="md:hidden">
                 {customers?.map((customer) => (
                   <div
                     key={customer.id}
-                    className="mb-2 w-full rounded-md bg-white p-4"
+                    className="mb-2 w-full rounded-md border border-slate-800 bg-slate-950/60 p-4"
                   >
-                    <div className="flex items-center justify-between border-b pb-4">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                       <div>
                         <div className="mb-2 flex items-center">
                           <div className="flex items-center gap-3">
@@ -41,29 +41,29 @@ export default async function CustomersTable({
                             <p>{customer.name}</p>
                           </div>
                         </div>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-slate-400">
                           {customer.email}
                         </p>
                       </div>
                     </div>
-                    <div className="flex w-full items-center justify-between border-b py-5">
+                    <div className="flex w-full items-center justify-between border-b border-slate-800 py-5">
                       <div className="flex w-1/2 flex-col">
-                        <p className="text-xs">Pending</p>
-                        <p className="font-medium">{customer.total_pending}</p>
+                        <p className="text-xs text-slate-400">Pending</p>
+                        <p className="font-medium text-sky-200">{customer.total_pending}</p>
                       </div>
                       <div className="flex w-1/2 flex-col">
-                        <p className="text-xs">Paid</p>
-                        <p className="font-medium">{customer.total_paid}</p>
+                        <p className="text-xs text-slate-400">Paid</p>
+                        <p className="font-medium text-emerald-200">{customer.total_paid}</p>
                       </div>
                     </div>
-                    <div className="pt-4 text-sm">
+                    <div className="pt-4 text-sm text-slate-300">
                       <p>{customer.total_invoices} invoices</p>
                     </div>
                   </div>
                 ))}
               </div>
-              <table className="hidden min-w-full rounded-md text-gray-900 md:table">
-                <thead className="rounded-md bg-gray-50 text-left text-sm font-normal">
+              <table className="hidden min-w-full rounded-md text-slate-100 md:table">
+                <thead className="rounded-md bg-slate-950/40 text-left text-sm font-semibold text-slate-300">
                   <tr>
                     <th scope="col" className="px-4 py-5 font-medium sm:pl-6">
                       Name
@@ -83,10 +83,10 @@ export default async function CustomersTable({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-200 text-gray-900">
+                <tbody className="divide-y divide-slate-800 text-slate-100">
                   {customers.map((customer) => (
                     <tr key={customer.id} className="group">
-                      <td className="whitespace-nowrap bg-white py-5 pl-4 pr-3 text-sm text-black group-first-of-type:rounded-md group-last-of-type:rounded-md sm:pl-6">
+                      <td className="whitespace-nowrap bg-slate-900/60 py-5 pl-4 pr-3 text-sm text-slate-100 group-first-of-type:rounded-md group-last-of-type:rounded-md sm:pl-6">
                         <div className="flex items-center gap-3">
                           <Image
                             src={customer.image_url}
@@ -98,16 +98,16 @@ export default async function CustomersTable({
                           <p>{customer.name}</p>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap bg-white px-4 py-5 text-sm">
+                      <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-slate-200">
                         {customer.email}
                       </td>
-                      <td className="whitespace-nowrap bg-white px-4 py-5 text-sm">
+                      <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-slate-200">
                         {customer.total_invoices}
                       </td>
-                      <td className="whitespace-nowrap bg-white px-4 py-5 text-sm">
+                      <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-sky-200">
                         {customer.total_pending}
                       </td>
-                      <td className="whitespace-nowrap bg-white px-4 py-5 text-sm group-first-of-type:rounded-md group-last-of-type:rounded-md">
+                      <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-emerald-200 group-first-of-type:rounded-md group-last-of-type:rounded-md">
                         {customer.total_paid}
                       </td>
                     </tr>
