@@ -7,7 +7,7 @@ import { Button } from '@/app/ui/button';
 import { createCustomer, CustomerState } from '@/app/lib/actions';
 
 export default function Form() {
-  const initialState: CustomerState = { message: null, errors: {} };
+  const initialState: CustomerState = { message: '', errors: {} };
   const [state, formAction] = useActionState(createCustomer, initialState);
 
   return (

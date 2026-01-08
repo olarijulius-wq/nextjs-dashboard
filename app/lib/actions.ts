@@ -48,7 +48,7 @@ export type CustomerState = {
     email?: string[];
     imageUrl?: string[];
   };
-  message?: string | null;
+  message: string;
 };
 
 // helper to get current user's email
