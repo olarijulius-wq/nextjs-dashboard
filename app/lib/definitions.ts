@@ -7,6 +7,7 @@ export type User = {
   name: string;
   email: string;
   password: string;
+  plan?: 'free' | 'solo' | 'pro' | 'studio';
 };
 
 export type Customer = {
@@ -129,4 +130,12 @@ export type CompanyProfile = {
   logo_url: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type LatePayerStat = {
+  customer_id: string;
+  name: string;
+  email: string;
+  paid_invoices: number;
+  avg_delay_days: number;
 };

@@ -31,8 +31,9 @@ export default async function Page(props: {
     fetchUserPlanAndUsage(),
   ]);
 
-  const { isPro, invoiceCount, freeLimit } = plan;
-  const canCreate = isPro || invoiceCount < freeLimit;
+  const { plan: planId, invoiceCount, maxPerMonth } = plan;
+  const hasUnlimited = !Number.isFinite(maxPerMonth);
+  const canCreate = hasUnlimited || invoiceCount < maxPerMonth;
 
   return (
     <main>
@@ -56,14 +57,14 @@ export default async function Page(props: {
                 href="/dashboard/settings"
                 className="flex h-10 items-center rounded-lg border border-amber-500 bg-amber-500/90 px-4 text-sm font-medium text-slate-900 shadow hover:bg-amber-400"
               >
-                Free plan limit reached - Upgrade to Pro
+                Plan limit reached - View plans
               </a>
             )}
           </div>
 
-          {!isPro && (
+          {!hasUnlimited && (
             <p className="text-xs text-slate-400">
-              {invoiceCount} / {freeLimit} invoices used on Free plan.
+              {invoiceCount} / {maxPerMonth} invoices used on {planId} plan.
             </p>
           )}
         </div>

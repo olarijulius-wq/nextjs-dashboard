@@ -2,8 +2,13 @@
 import { NextResponse } from 'next/server';
 import { stripe } from '@/app/lib/stripe';
 import { auth } from '@/auth';
+import {
+  STRIPE_PRICE_ID_BY_PLAN,
+  normalizePlan,
+  type PlanId,
+} from '@/app/lib/config';
 
-export async function POST() {
+export async function POST(req: Request) {
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -12,10 +17,33 @@ export async function POST() {
 
   const normalizedEmail = session.user.email.trim().toLowerCase();
 
-  const priceId = process.env.STRIPE_PRICE_ID;
+  const url = new URL(req.url);
+  let requestedPlan = url.searchParams.get('plan')?.trim().toLowerCase() ?? '';
+
+  if (!requestedPlan) {
+    try {
+      const body = (await req.json()) as { plan?: string };
+      requestedPlan = body?.plan?.trim().toLowerCase() ?? '';
+    } catch {
+      requestedPlan = '';
+    }
+  }
+
+  const normalizedPlan = normalizePlan(requestedPlan);
+  const plan: PlanId = requestedPlan ? normalizedPlan : 'pro';
+
+  if (requestedPlan && normalizedPlan === 'free') {
+    return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+  }
+
+  if (plan === 'free') {
+    return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+  }
+
+  const priceId = STRIPE_PRICE_ID_BY_PLAN[plan];
   if (!priceId) {
     return NextResponse.json(
-      { error: 'Missing STRIPE_PRICE_ID' },
+      { error: `Missing Stripe price for plan: ${plan}` },
       { status: 500 },
     );
   }
@@ -36,11 +64,13 @@ export async function POST() {
       metadata: {
         userEmail: normalizedEmail,
         userId: (session.user as { id?: string }).id ?? '',
+        plan,
       },
       subscription_data: {
         metadata: {
           userEmail: normalizedEmail,
           userId: (session.user as { id?: string }).id ?? '',
+          plan,
         },
       },
 

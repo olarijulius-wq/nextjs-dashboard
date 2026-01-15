@@ -2,6 +2,11 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import postgres from "postgres";
+import {
+  normalizePlan,
+  planFromStripePriceId,
+  isActiveSubscription,
+} from "@/app/lib/config";
 
 export const runtime = "nodejs";
 
@@ -62,6 +67,10 @@ export async function POST(req: Request) {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
 
+      const rawPlan = session.metadata?.plan ?? null;
+      const normalizedPlan = rawPlan ? normalizePlan(rawPlan) : null;
+      const isPro = normalizedPlan ? normalizedPlan !== "free" : true;
+
       const metadataUserId = session.metadata?.userId || null;
       const email =
         session.customer_email ||
@@ -77,7 +86,8 @@ export async function POST(req: Request) {
         const updated = await sql`
           update public.users
           set
-            is_pro = true,
+            plan = coalesce(${normalizedPlan}, plan),
+            is_pro = ${isPro},
             stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
             stripe_subscription_id = coalesce(${subscriptionId}, stripe_subscription_id),
             subscription_status = coalesce(subscription_status, 'active')
@@ -95,7 +105,8 @@ export async function POST(req: Request) {
         const updated = await sql`
           update public.users
           set
-            is_pro = true,
+            plan = coalesce(${normalizedPlan}, plan),
+            is_pro = ${isPro},
             stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
             stripe_subscription_id = coalesce(${subscriptionId}, stripe_subscription_id),
             subscription_status = coalesce(subscription_status, 'active')
@@ -137,7 +148,13 @@ export async function POST(req: Request) {
         typeof currentPeriodEndUnix === "number"
           ? new Date(currentPeriodEndUnix * 1000)
           : null;
-      const isPro = status === "active" || status === "trialing";
+      const priceId = sub.items?.data?.[0]?.price?.id ?? null;
+      const planFromPrice = planFromStripePriceId(priceId);
+      const planFromMetadata = sub.metadata?.plan
+        ? normalizePlan(sub.metadata.plan)
+        : null;
+      const plan = planFromPrice ?? planFromMetadata;
+      const isPro = isActiveSubscription(status) && (plan ? plan !== "free" : true);
 
       console.log("WEBHOOK_EVENT", event.id, event.type);
       console.log("sub.id:", subscriptionId);
@@ -155,6 +172,7 @@ export async function POST(req: Request) {
       const updated = await sql`
         update public.users
         set
+          plan = coalesce(${plan}, plan),
           stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
           stripe_subscription_id = ${subscriptionId},
           subscription_status = ${status},
@@ -174,6 +192,7 @@ export async function POST(req: Request) {
           const updated2 = await sql`
             update public.users
             set
+              plan = coalesce(${plan}, plan),
               stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
               stripe_subscription_id = ${subscriptionId},
               subscription_status = ${status},
@@ -195,6 +214,7 @@ export async function POST(req: Request) {
       const updated = await sql`
         update public.users
         set
+          plan = 'free',
           is_pro = false,
           subscription_status = 'canceled',
           cancel_at_period_end = false,
@@ -210,6 +230,40 @@ export async function POST(req: Request) {
         updated.length,
         updated[0],
       );
+    }
+
+    // 4) Invoice payment succeeded -> mark invoice as paid
+    if (event.type === "payment_intent.succeeded") {
+      const intent = event.data.object as Stripe.PaymentIntent;
+      const invoiceId = intent.metadata?.invoice_id;
+      const userEmail = intent.metadata?.user_email;
+
+      if (!invoiceId || !userEmail) {
+        console.warn(
+          "payment_intent.succeeded -> missing metadata",
+          intent.id,
+          intent.metadata,
+        );
+      } else {
+        const normalizedEmail = normalizeEmail(userEmail);
+        const updated = await sql`
+          update invoices
+          set
+            status = 'paid',
+            paid_at = now(),
+            stripe_payment_intent_id = coalesce(stripe_payment_intent_id, ${intent.id})
+          where id = ${invoiceId}
+            and lower(user_email) = ${normalizedEmail}
+          returning id, status, paid_at
+        `;
+        console.log(
+          "payment_intent.succeeded -> invoice:",
+          invoiceId,
+          "rows:",
+          updated.length,
+          updated[0],
+        );
+      }
     }
 
     return NextResponse.json({ received: true });

@@ -1,5 +1,6 @@
 import RevenueChart from '@/app/ui/dashboard/revenue-chart';
 import LatestInvoices from '@/app/ui/dashboard/latest-invoices';
+import LatePayers from '@/app/ui/dashboard/late-payers';
 import { lusitana } from '@/app/ui/fonts';
 import { Suspense } from 'react';
 import CardWrapper from '@/app/ui/dashboard/cards';
@@ -30,13 +31,20 @@ export default async function Page() {
       </div>
 
       {/* Chart + latest invoices allpool */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Suspense fallback={<RevenueChartSkeleton />}>
-          <RevenueChart />
-        </Suspense>
-        <Suspense fallback={<LatestInvoicesSkeleton />}>
-          <LatestInvoices />
-        </Suspense>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Suspense fallback={<RevenueChartSkeleton />}>
+            <RevenueChart />
+          </Suspense>
+        </div>
+        <div className="flex flex-col gap-6">
+          <Suspense fallback={<LatestInvoicesSkeleton />}>
+            <LatestInvoices />
+          </Suspense>
+          <Suspense fallback={<LatestInvoicesSkeleton />}>
+            <LatePayers />
+          </Suspense>
+        </div>
       </div>
     </main>
   );

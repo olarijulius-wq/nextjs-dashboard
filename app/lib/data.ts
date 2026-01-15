@@ -9,10 +9,12 @@ import {
   InvoiceForm,
   InvoicesTable,
   LatestInvoiceRaw,
+  LatePayerStat,
   Revenue,
 } from './definitions';
 import { formatCurrency } from './utils';
 import { auth } from '@/auth';
+import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from './config';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -451,6 +453,50 @@ export async function fetchInvoicesByCustomerId(customerId: string) {
   }
 }
 
+export async function fetchLatePayerStats() {
+  const userEmail = await requireUserEmail();
+
+  try {
+    const data = await sql<LatePayerStat[]>`
+      SELECT
+        customers.id AS customer_id,
+        customers.name,
+        customers.email,
+        COUNT(invoices.id)::int AS paid_invoices,
+        AVG(
+          CASE
+            WHEN invoices.due_date IS NOT NULL
+            THEN (invoices.paid_at::date - invoices.due_date)
+            ELSE (invoices.paid_at::date - invoices.date)
+          END
+        )::float AS avg_delay_days
+      FROM invoices
+      JOIN customers
+        ON customers.id = invoices.customer_id
+        AND lower(customers.user_email) = ${userEmail}
+      WHERE
+        lower(invoices.user_email) = ${userEmail}
+        AND invoices.status = 'paid'
+        AND invoices.paid_at IS NOT NULL
+        AND (
+          CASE
+            WHEN invoices.due_date IS NOT NULL
+            THEN (invoices.paid_at::date - invoices.due_date)
+            ELSE (invoices.paid_at::date - invoices.date)
+          END
+        ) > 0
+      GROUP BY customers.id, customers.name, customers.email
+      ORDER BY avg_delay_days DESC
+      LIMIT 10
+    `;
+
+    return data;
+  } catch (error) {
+    console.error('Database Error:', error);
+    throw new Error('Failed to fetch late payer stats.');
+  }
+}
+
 export async function fetchFilteredCustomers(query: string) {
   const userEmail = await requireUserEmail();
 
@@ -490,20 +536,31 @@ export async function fetchFilteredCustomers(query: string) {
   }
 }
 
-export async function fetchUserPlanAndUsage() {
+export type UserPlanUsage = {
+  plan: PlanId;
+  isPro: boolean;
+  subscriptionStatus: string | null;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd: Date | string | null;
+  invoiceCount: number;
+  maxPerMonth: number;
+};
+
+export async function fetchUserPlanAndUsage(): Promise<UserPlanUsage> {
   const session = await auth();
   const email = session?.user?.email;
-  const freeLimit = 5;
+  const freeLimit = PLAN_CONFIG.free.maxPerMonth;
 
   // Kui mingil põhjusel sessiooni pole, käitume kui free user 0 invoice’iga
   if (!email) {
     return {
+      plan: 'free' as PlanId,
       isPro: false,
       subscriptionStatus: null as string | null,
       cancelAtPeriodEnd: false,
       currentPeriodEnd: null as Date | string | null,
       invoiceCount: 0,
-      freeLimit,
+      maxPerMonth: freeLimit,
     };
   }
 
@@ -516,8 +573,9 @@ export async function fetchUserPlanAndUsage() {
       subscription_status: string | null;
       cancel_at_period_end: boolean | null;
       current_period_end: Date | string | null;
+      plan: string | null;
     }[]>`
-      select is_pro, subscription_status, cancel_at_period_end, current_period_end
+      select is_pro, subscription_status, cancel_at_period_end, current_period_end, plan
       from users
       where lower(email) = ${normalizedEmail}
       limit 1
@@ -526,18 +584,26 @@ export async function fetchUserPlanAndUsage() {
       select count(*)::text as count
       from invoices
       where lower(user_email) = ${normalizedEmail}
+        and date >= date_trunc('month', current_date)::date
+        and date < (date_trunc('month', current_date) + interval '1 month')::date
     `,
   ]);
 
   const user = userRows[0];
+  const plan = resolveEffectivePlan(
+    user?.plan ?? null,
+    user?.subscription_status ?? null,
+  );
+  const maxPerMonth = PLAN_CONFIG[plan].maxPerMonth;
   const invoiceCount = Number(invoiceRows[0]?.count ?? '0');
 
   return {
+    plan,
     isPro: !!user?.is_pro,
     subscriptionStatus: user?.subscription_status ?? null,
     cancelAtPeriodEnd: user?.cancel_at_period_end ?? false,
     currentPeriodEnd: user?.current_period_end ?? null,
     invoiceCount,
-    freeLimit,
+    maxPerMonth,
   };
 }

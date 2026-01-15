@@ -156,7 +156,7 @@ export default function Form({
               className="mt-2 inline-flex items-center rounded-md border border-amber-300/40 px-3 py-2 text-sm font-medium text-amber-100 hover:bg-amber-500/10"
               href="/dashboard/settings"
             >
-              Upgrade to Pro
+              View plans
             </a>
           </div>
         )}

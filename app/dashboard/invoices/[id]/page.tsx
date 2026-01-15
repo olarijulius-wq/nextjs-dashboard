@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import DuplicateInvoiceButton from '@/app/ui/invoices/duplicate-button';
+import PayInvoiceButton from '@/app/ui/invoices/pay-button';
 import { formatCurrency, formatDateToLocal } from '@/app/lib/utils';
 import { fetchInvoiceById } from '@/app/lib/data';
 import { updateInvoiceStatus } from '@/app/lib/actions';
@@ -95,6 +96,9 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               {statusLabel}
             </button>
           </form>
+          {invoice.status !== 'paid' && (
+            <PayInvoiceButton invoiceId={invoice.id} />
+          )}
           <DuplicateInvoiceButton id={invoice.id} />
         </div>
       </div>

@@ -8,6 +8,7 @@ import { signIn, auth } from '@/auth';
 import { AuthError } from 'next-auth';
 import bcrypt from 'bcrypt';
 import { getNextInvoiceNumber, upsertCompanyProfile } from '@/app/lib/data';
+import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from '@/app/lib/config';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -150,6 +151,39 @@ async function requireUserEmail() {
   return normalizeEmail(email);
 }
 
+async function fetchUserPlan(userEmail: string): Promise<PlanId> {
+  const [user] = await sql<
+    { plan: string | null; subscription_status: string | null }[]
+  >`
+    select plan, subscription_status
+    from users
+    where lower(email) = ${userEmail}
+    limit 1
+  `;
+
+  return resolveEffectivePlan(user?.plan ?? null, user?.subscription_status ?? null);
+}
+
+async function fetchInvoiceCountThisMonth(userEmail: string) {
+  const [{ count = '0' } = { count: '0' }] = await sql<{ count: string }[]>`
+    select count(*)::text as count
+    from invoices
+    where lower(user_email) = ${userEmail}
+      and date >= date_trunc('month', current_date)::date
+      and date < (date_trunc('month', current_date) + interval '1 month')::date
+  `;
+
+  return Number(count);
+}
+
+function buildPlanLimitMessage(plan: PlanId) {
+  const config = PLAN_CONFIG[plan];
+  const limitLabel = Number.isFinite(config.maxPerMonth)
+    ? `${config.maxPerMonth} invoices per month`
+    : 'unlimited invoices';
+  return `${config.name} plan limit reached (${limitLabel}). Upgrade your plan to create more invoices.`;
+}
+
 export async function createInvoice(
   prevState: CreateInvoiceState | null,
   formData: FormData,
@@ -180,30 +214,17 @@ export async function createInvoice(
     };
   }
 
-  const [{ is_pro: isPro = false } = { is_pro: false }] = await sql<
-    { is_pro: boolean | null }[]
-  >`
-    select is_pro
-    from users
-    where lower(email) = ${userEmail}
-    limit 1
-  `;
+  const plan = await fetchUserPlan(userEmail);
+  const planConfig = PLAN_CONFIG[plan];
 
-  if (!isPro) {
-    const [{ count = '0' } = { count: '0' }] = await sql<
-      { count: string }[]
-    >`
-      select count(*)::text as count
-      from invoices
-      where lower(user_email) = ${userEmail}
-    `;
+  if (Number.isFinite(planConfig.maxPerMonth)) {
+    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail);
 
-    if (Number(count) >= 5) {
+    if (invoiceCount >= planConfig.maxPerMonth) {
       return {
         ok: false,
         code: 'LIMIT_REACHED',
-        message:
-          'Free plan limit reached. Upgrade to Pro to create more invoices.',
+        message: buildPlanLimitMessage(plan),
       };
     }
   }
@@ -353,30 +374,17 @@ export async function duplicateInvoice(
     };
   }
 
-  const [{ is_pro: isPro = false } = { is_pro: false }] = await sql<
-    { is_pro: boolean | null }[]
-  >`
-    select is_pro
-    from users
-    where lower(email) = ${userEmail}
-    limit 1
-  `;
+  const plan = await fetchUserPlan(userEmail);
+  const planConfig = PLAN_CONFIG[plan];
 
-  if (!isPro) {
-    const [{ count = '0' } = { count: '0' }] = await sql<
-      { count: string }[]
-    >`
-      select count(*)::text as count
-      from invoices
-      where lower(user_email) = ${userEmail}
-    `;
+  if (Number.isFinite(planConfig.maxPerMonth)) {
+    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail);
 
-    if (Number(count) >= 5) {
+    if (invoiceCount >= planConfig.maxPerMonth) {
       return {
         ok: false,
         code: 'LIMIT_REACHED',
-        message:
-          'Free plan limit reached. Upgrade to Pro to create more invoices.',
+        message: buildPlanLimitMessage(plan),
       };
     }
   }

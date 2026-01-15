@@ -1,6 +1,7 @@
 // import Image from 'next/image';
 import Link from 'next/link';
 import { UpdateInvoice, DeleteInvoice } from '@/app/ui/invoices/buttons';
+import PayInvoiceButton from '@/app/ui/invoices/pay-button';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatDateToLocal, formatCurrency } from '@/app/lib/utils';
 import type { InvoicesTable as InvoicesTableType } from '@/app/lib/definitions';
@@ -46,6 +47,12 @@ export default function InvoicesTable({
                     <p>{formatDateToLocal(invoice.date)}</p>
                   </div>
                   <div className="flex justify-end gap-2">
+                    {invoice.status !== 'paid' && (
+                      <PayInvoiceButton
+                        invoiceId={invoice.id}
+                        className="rounded-md border border-emerald-500/40 px-2 py-1 text-xs text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    )}
                     <UpdateInvoice id={invoice.id} />
                     <DeleteInvoice id={invoice.id} />
                   </div>
@@ -112,6 +119,12 @@ export default function InvoicesTable({
                   </td>
                   <td className="whitespace-nowrap bg-slate-900/60 py-3 pl-6 pr-3">
                     <div className="flex justify-end gap-3">
+                      {invoice.status !== 'paid' && (
+                        <PayInvoiceButton
+                          invoiceId={invoice.id}
+                          className="rounded-md border border-emerald-500/40 px-2 py-1 text-xs text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                      )}
                       <UpdateInvoice id={invoice.id} />
                       <DeleteInvoice id={invoice.id} />
                     </div>
