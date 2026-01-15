@@ -4,9 +4,11 @@ import { Metadata } from 'next';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import DuplicateInvoiceButton from '@/app/ui/invoices/duplicate-button';
 import PayInvoiceButton from '@/app/ui/invoices/pay-button';
+import CopyLinkButton from '@/app/ui/invoices/copy-link-button';
 import { formatCurrency, formatDateToLocal } from '@/app/lib/utils';
 import { fetchInvoiceById } from '@/app/lib/data';
 import { updateInvoiceStatus } from '@/app/lib/actions';
+import { generatePayLink } from '@/app/lib/pay-link';
 
 export const metadata: Metadata = {
   title: 'Invoice',
@@ -32,6 +34,12 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     invoice.id,
     statusAction,
   );
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000');
+  const payLink = generatePayLink(baseUrl, invoice.id);
 
   return (
     <main className="space-y-6">
@@ -100,6 +108,24 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             <PayInvoiceButton invoiceId={invoice.id} />
           )}
           <DuplicateInvoiceButton id={invoice.id} />
+        </div>
+      </div>
+
+      <div className="rounded-md border border-slate-800 bg-slate-900/80 p-6">
+        <p className="text-sm font-semibold text-slate-100">
+          Client payment link
+        </p>
+        <p className="mt-1 text-sm text-slate-400">
+          Share this link with your client. They can pay without logging in.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            readOnly
+            value={payLink}
+            className="w-full flex-1 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 outline-none"
+          />
+          <CopyLinkButton text={payLink} />
         </div>
       </div>
     </main>

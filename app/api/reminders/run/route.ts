@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import postgres from 'postgres';
 import { sendInvoiceReminderEmail } from '@/app/lib/email';
-import { createInvoiceCheckoutSession } from '@/app/lib/invoice-checkout';
+import { generatePayLink } from '@/app/lib/pay-link';
 
 export const runtime = 'nodejs';
 
@@ -110,24 +110,7 @@ export async function POST(req: Request) {
 
   for (const reminder of reminders) {
     try {
-      const checkoutSession = await createInvoiceCheckoutSession(
-        {
-          id: reminder.id,
-          amount: reminder.amount,
-          invoice_number: reminder.invoice_number,
-          customer_email: reminder.customer_email,
-          user_email: reminder.user_email.trim().toLowerCase(),
-        },
-        baseUrl,
-      );
-
-      await sql`
-        UPDATE invoices
-        SET stripe_checkout_session_id = ${checkoutSession.id}
-        WHERE id = ${reminder.id}
-      `;
-
-      const payLink = checkoutSession.url ?? `${baseUrl}/dashboard/invoices/${reminder.id}`;
+      const payLink = generatePayLink(baseUrl, reminder.id);
       const amountLabel = formatAmount(reminder.amount);
       const dueDateLabel = formatDate(reminder.due_date);
       const reminderNumber = reminder.reminder_level;

@@ -34,7 +34,6 @@ export default function CompanyProfileForm({
   const [billingEmail, setBillingEmail] = useState(
     initialProfile?.billing_email ?? '',
   );
-  const [logoUrl, setLogoUrl] = useState(initialProfile?.logo_url ?? '');
 
   return (
     <form action={formAction} className="rounded-md border border-slate-800 bg-slate-900/80 p-4">
@@ -251,27 +250,6 @@ export default function CompanyProfileForm({
           </div>
         </div>
 
-        <div className="md:col-span-2">
-          <label htmlFor="logoUrl" className="mb-2 block text-sm font-medium text-slate-200">
-            Logo URL
-          </label>
-          <input
-            id="logoUrl"
-            name="logoUrl"
-            type="url"
-            value={logoUrl}
-            onChange={(event) => setLogoUrl(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-            aria-describedby="logoUrl-error"
-          />
-          <div id="logoUrl-error" aria-live="polite" aria-atomic="true">
-            {state.errors?.logoUrl?.map((error) => (
-              <p className="mt-2 text-sm text-red-500" key={error}>
-                {error}
-              </p>
-            ))}
-          </div>
-        </div>
       </div>
 
       {state.message && (

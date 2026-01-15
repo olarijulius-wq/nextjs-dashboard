@@ -41,6 +41,7 @@ const requiredText = (schema: z.ZodTypeAny) =>
 
 const optionalText = (schema: z.ZodTypeAny) =>
   z.preprocess((value) => {
+    if (value == null) return undefined;
     if (typeof value !== 'string') return value;
     const trimmed = value.trim();
     return trimmed === '' ? undefined : trimmed;
