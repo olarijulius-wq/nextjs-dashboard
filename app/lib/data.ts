@@ -285,8 +285,16 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
         invoices.id,
         invoices.amount,
         invoices.date,
+        invoices.due_date,
         invoices.status,
         invoices.invoice_number,
+        CASE
+          WHEN invoices.status = 'pending'
+            AND invoices.due_date IS NOT NULL
+            AND invoices.due_date < current_date
+          THEN (current_date - invoices.due_date)
+          ELSE 0
+        END AS days_overdue,
         customers.name,
         customers.email,
         customers.image_url
@@ -351,6 +359,7 @@ export async function fetchInvoiceById(id: string) {
         invoices.amount,
         invoices.status,
         invoices.date,
+        invoices.due_date,
         invoices.invoice_number,
         customers.name AS customer_name,
         customers.email AS customer_email
@@ -379,7 +388,8 @@ export async function fetchInvoiceFormById(id: string) {
         invoices.id,
         invoices.customer_id,
         invoices.amount,
-        invoices.status
+        invoices.status,
+        invoices.due_date
       FROM invoices
       WHERE invoices.id = ${id}
         AND lower(invoices.user_email) = ${userEmail}

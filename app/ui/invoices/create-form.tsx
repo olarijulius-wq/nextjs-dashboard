@@ -24,6 +24,7 @@ export default function Form({
   const [customerId, setCustomerId] = useState(initialCustomerId ?? '');
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState('');
+  const [dueDate, setDueDate] = useState('');
   return (
     <form action={formAction}>
       <div className="rounded-md border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:p-6">
@@ -147,8 +148,31 @@ export default function Form({
                     {error}
                   </p>
                 ))}
-            </div>
+          </div>
         </fieldset>
+        <div className="mt-4">
+          <label htmlFor="dueDate" className="mb-2 block text-sm font-medium text-slate-200">
+            Due date
+          </label>
+          <input
+            id="dueDate"
+            name="dueDate"
+            type="date"
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
+            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            aria-describedby="dueDate-error"
+          />
+          <div id="dueDate-error" aria-live="polite" aria-atomic="true">
+            {state?.ok === false &&
+              state.errors?.dueDate &&
+              state.errors.dueDate.map((error: string) => (
+                <p className="mt-2 text-sm text-red-500" key={error}>
+                  {error}
+                </p>
+              ))}
+          </div>
+        </div>
         {state?.ok === false && state.code === 'LIMIT_REACHED' && (
           <div className="mt-4 rounded-md border border-amber-400/50 bg-amber-500/10 p-3 text-amber-100">
             <p className="text-sm">{state.message}</p>

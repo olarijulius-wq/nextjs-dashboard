@@ -31,7 +31,15 @@ export default function InvoicesTable({
                     </div>
                     <p className="text-sm text-slate-400">{invoice.email}</p>
                   </div>
-                  <InvoiceStatus status={invoice.status} />
+                  <div className="flex flex-col items-end">
+                    <InvoiceStatus status={invoice.status} />
+                    {invoice.status === 'pending' && invoice.days_overdue > 0 && (
+                      <span className="mt-1 text-xs text-amber-300">
+                        Overdue by {invoice.days_overdue} day
+                        {invoice.days_overdue === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex w-full items-center justify-between pt-4">
                   <div>
@@ -45,6 +53,9 @@ export default function InvoicesTable({
                       {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
                     </Link>
                     <p>{formatDateToLocal(invoice.date)}</p>
+                    <p className="text-sm text-slate-400">
+                      Due {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+                    </p>
                   </div>
                   <div className="flex justify-end gap-2">
                     {invoice.status !== 'paid' && (
@@ -74,6 +85,9 @@ export default function InvoicesTable({
                 </th>
                 <th scope="col" className="px-3 py-5 font-medium">
                   Date
+                </th>
+                <th scope="col" className="px-3 py-5 font-medium">
+                  Due date
                 </th>
                 <th scope="col" className="px-3 py-5 font-medium">
                   Status
@@ -114,8 +128,19 @@ export default function InvoicesTable({
                   <td className="whitespace-nowrap bg-slate-900/60 px-3 py-3 text-slate-300">
                     {formatDateToLocal(invoice.date)}
                   </td>
+                  <td className="whitespace-nowrap bg-slate-900/60 px-3 py-3 text-slate-300">
+                    {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+                  </td>
                   <td className="whitespace-nowrap bg-slate-900/60 px-3 py-3">
-                    <InvoiceStatus status={invoice.status} />
+                    <div className="flex flex-col">
+                      <InvoiceStatus status={invoice.status} />
+                      {invoice.status === 'pending' && invoice.days_overdue > 0 && (
+                        <span className="mt-1 text-xs text-amber-300">
+                          Overdue by {invoice.days_overdue} day
+                          {invoice.days_overdue === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="whitespace-nowrap bg-slate-900/60 py-3 pl-6 pr-3">
                     <div className="flex justify-end gap-3">

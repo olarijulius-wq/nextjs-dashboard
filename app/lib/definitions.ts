@@ -53,6 +53,8 @@ export type InvoicesTable = {
   email: string;
   image_url: string;
   date: string;
+  due_date: string | null;
+  days_overdue: number;
   amount: number;
   invoice_number: string | null;
   status: 'pending' | 'paid';
@@ -67,6 +69,7 @@ export type InvoiceDetail = {
   invoice_number: string | null;
   status: 'pending' | 'paid';
   date: string;
+  due_date: string | null;
 };
 
 export type CustomersTableType = {
@@ -106,6 +109,7 @@ export type InvoiceForm = {
   customer_id: string;
   amount: number;
   status: 'pending' | 'paid';
+  due_date: string | null;
 };
 
 export type CustomerInvoice = {

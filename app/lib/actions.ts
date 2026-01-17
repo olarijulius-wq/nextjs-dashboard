@@ -16,23 +16,6 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-const FormSchema = z.object({
-  id: z.string(),
-  customerId: z.string({
-    invalid_type_error: 'Please select a customer.',
-  }),
-  amount: z.coerce
-    .number()
-    .gt(0, { message: 'Please enter an amount greater than $0.' }),
-  status: z.enum(['pending', 'paid'], {
-    invalid_type_error: 'Please select an invoice status.',
-  }),
-  date: z.string(),
-});
-
-const CreateInvoice = FormSchema.omit({ id: true, date: true });
-const UpdateInvoice = FormSchema.omit({ id: true, date: true });
-
 const requiredText = (schema: z.ZodTypeAny) =>
   z.preprocess(
     (value) => (typeof value === 'string' ? value.trim() : value),
@@ -46,6 +29,30 @@ const optionalText = (schema: z.ZodTypeAny) =>
     const trimmed = value.trim();
     return trimmed === '' ? undefined : trimmed;
   }, schema.optional());
+
+const FormSchema = z.object({
+  id: z.string(),
+  customerId: z.string({
+    invalid_type_error: 'Please select a customer.',
+  }),
+  amount: z.coerce
+    .number()
+    .gt(0, { message: 'Please enter an amount greater than $0.' }),
+  status: z.enum(['pending', 'paid'], {
+    invalid_type_error: 'Please select an invoice status.',
+  }),
+  dueDate: optionalText(
+    z
+      .string()
+      .refine((value) => !Number.isNaN(Date.parse(value)), {
+        message: 'Please enter a valid due date.',
+      }),
+  ),
+  date: z.string(),
+});
+
+const CreateInvoice = FormSchema.omit({ id: true, date: true });
+const UpdateInvoice = FormSchema.omit({ id: true, date: true });
 
 const CompanyProfileSchema = z.object({
   companyName: requiredText(
@@ -91,6 +98,7 @@ export type State = {
     customerId?: string[];
     amount?: string[];
     status?: string[];
+    dueDate?: string[];
   };
   message?: string | null;
 };
@@ -193,6 +201,7 @@ export async function createInvoice(
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
     status: formData.get('status'),
+    dueDate: formData.get('dueDate'),
   });
 
   if (!validatedFields.success) {
@@ -230,7 +239,7 @@ export async function createInvoice(
     }
   }
 
-  const { customerId, amount, status } = validatedFields.data;
+  const { customerId, amount, status, dueDate } = validatedFields.data;
   const amountInCents = Math.round(amount * 100);
   const date = new Date().toISOString().split('T')[0];
   let invoiceNumber: string;
@@ -247,8 +256,8 @@ export async function createInvoice(
 
   try {
     const created = await sql<{ id: string }[]>`
-      INSERT INTO invoices (customer_id, amount, status, date, user_email, invoice_number)
-      VALUES (${customerId}, ${amountInCents}, ${status}, ${date}, ${userEmail}, ${invoiceNumber})
+      INSERT INTO invoices (customer_id, amount, status, date, due_date, user_email, invoice_number)
+      VALUES (${customerId}, ${amountInCents}, ${status}, ${date}, ${dueDate ?? null}, ${userEmail}, ${invoiceNumber})
       RETURNING id
     `;
 
@@ -281,6 +290,7 @@ export async function updateInvoice(
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
     status: formData.get('status'),
+    dueDate: formData.get('dueDate'),
   });
 
   if (!validatedFields.success) {
@@ -297,13 +307,13 @@ export async function updateInvoice(
     return { message: 'Unauthorized.' };
   }
 
-  const { customerId, amount, status } = validatedFields.data;
+  const { customerId, amount, status, dueDate } = validatedFields.data;
   const amountInCents = amount * 100;
 
   try {
     const updated = await sql`
       UPDATE invoices
-      SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
+      SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}, due_date = ${dueDate ?? null}
       WHERE id = ${id} AND lower(user_email) = ${userEmail}
       RETURNING id
     `;

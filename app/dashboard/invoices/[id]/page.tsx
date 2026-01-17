@@ -82,6 +82,10 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             <p className="text-sm text-slate-200">
               {formatDateToLocal(invoice.date)}
             </p>
+            <p className="mt-2 text-sm text-slate-400">Due date</p>
+            <p className="text-sm text-slate-200">
+              {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-slate-400">Status</p>
