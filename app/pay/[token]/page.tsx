@@ -19,7 +19,12 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-export default async function Page(props: { params: Promise<{ token: string }> }) {
+type PageProps = {
+  params: Promise<{ token: string }>;
+  searchParams?: { paid?: string; canceled?: string };
+};
+
+export default async function Page(props: PageProps) {
   const params = await props.params;
   const payload = verifyPayToken(params.token);
 
@@ -65,10 +70,22 @@ export default async function Page(props: { params: Promise<{ token: string }> }
   const displayNumber =
     invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`;
   const amountLabel = formatCurrency(invoice.amount, invoice.currency);
+  const isPaid = props.searchParams?.paid === '1';
+  const isCanceled = props.searchParams?.canceled === '1';
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-12 text-slate-100">
       <div className="mx-auto w-full max-w-2xl space-y-6">
+        {isPaid && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            Payment successful. Thank you!
+          </div>
+        )}
+        {!isPaid && isCanceled && (
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-3 text-sm text-slate-200">
+            Payment was canceled.
+          </div>
+        )}
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-6 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>

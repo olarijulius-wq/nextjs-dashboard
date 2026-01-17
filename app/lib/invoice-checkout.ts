@@ -8,12 +8,24 @@ export type InvoiceCheckoutInput = {
   user_email: string;
 };
 
+export type InvoiceCheckoutOptions = {
+  successUrl?: string;
+  cancelUrl?: string;
+};
+
 export async function createInvoiceCheckoutSession(
   invoice: InvoiceCheckoutInput,
   baseUrl: string,
+  options?: InvoiceCheckoutOptions,
 ) {
   const invoiceLabel =
     invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`;
+  const successUrl =
+    options?.successUrl ??
+    `${baseUrl}/dashboard/invoices/${invoice.id}?paid=1`;
+  const cancelUrl =
+    options?.cancelUrl ??
+    `${baseUrl}/dashboard/invoices/${invoice.id}?canceled=1`;
 
   return stripe.checkout.sessions.create({
     mode: 'payment',
@@ -40,7 +52,7 @@ export async function createInvoiceCheckoutSession(
         user_email: invoice.user_email,
       },
     },
-    success_url: `${baseUrl}/dashboard/invoices/${invoice.id}?paid=1`,
-    cancel_url: `${baseUrl}/dashboard/invoices/${invoice.id}?canceled=1`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
   });
 }

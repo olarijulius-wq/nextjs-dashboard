@@ -57,6 +57,7 @@ export async function POST(
     (process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : 'http://localhost:3000');
+  const payPageUrl = `${baseUrl}/pay/${params.token}`;
 
   try {
     const checkoutSession = await createInvoiceCheckoutSession(
@@ -68,6 +69,10 @@ export async function POST(
         user_email: normalizeEmail(invoice.user_email),
       },
       baseUrl,
+      {
+        successUrl: `${payPageUrl}?paid=1`,
+        cancelUrl: `${payPageUrl}?canceled=1`,
+      },
     );
 
     await sql`
