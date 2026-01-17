@@ -21,11 +21,14 @@ function formatDate(value: string | null) {
 
 type PageProps = {
   params: Promise<{ token: string }>;
-  searchParams?: { paid?: string; canceled?: string };
+  searchParams?: Promise<{ paid?: string; canceled?: string }>;
 };
 
 export default async function Page(props: PageProps) {
   const params = await props.params;
+  const searchParams = props.searchParams
+    ? await props.searchParams
+    : undefined;
   const payload = verifyPayToken(params.token);
 
   if (!payload) {
@@ -70,8 +73,8 @@ export default async function Page(props: PageProps) {
   const displayNumber =
     invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`;
   const amountLabel = formatCurrency(invoice.amount, invoice.currency);
-  const isPaid = props.searchParams?.paid === '1';
-  const isCanceled = props.searchParams?.canceled === '1';
+  const isPaid = searchParams?.paid === '1';
+  const isCanceled = searchParams?.canceled === '1';
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-12 text-slate-100">
