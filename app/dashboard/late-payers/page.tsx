@@ -78,33 +78,31 @@ export default async function Page() {
                   <Link
                     key={payer.customer_id}
                     href={`/dashboard/customers/${payer.customer_id}`}
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-slate-100"
+                    className="w-full space-y-2 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-slate-100"
                   >
-                    <div className="space-y-2">
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-400">Customer</p>
-                        <p className="truncate text-sm font-semibold text-slate-100">
-                          {payer.name}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-400">Email</p>
-                        <p className="truncate text-sm text-slate-200">
-                          {payer.email}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-400">Paid invoices</p>
-                        <p className="text-sm text-slate-100">
-                          {payer.paid_invoices}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-400">Avg delay</p>
-                        <p className="text-sm text-amber-200">
-                          {formatDelay(payer.avg_delay_days).replace('+', '')} late
-                        </p>
-                      </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Customer</p>
+                      <p className="truncate text-sm text-slate-100">
+                        {payer.name}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Email</p>
+                      <p className="truncate text-sm text-slate-100">
+                        {payer.email}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Paid invoices</p>
+                      <p className="truncate text-sm text-slate-100">
+                        {payer.paid_invoices}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Avg delay</p>
+                      <p className="truncate text-sm text-slate-100">
+                        {formatDelay(payer.avg_delay_days).replace('+', '')} late
+                      </p>
                     </div>
                   </Link>
                 ))}
