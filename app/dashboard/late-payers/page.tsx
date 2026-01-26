@@ -73,34 +73,37 @@ export default async function Page() {
             </>
           ) : (
             <>
-              <div className="space-y-3 md:hidden">
+              <div className="mt-4 space-y-3 md:hidden">
                 {latePayers.map((payer) => (
                   <Link
                     key={payer.customer_id}
                     href={`/dashboard/customers/${payer.customer_id}`}
                     className="w-full space-y-2 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-slate-100"
                   >
-                    <div>
+                    <div className="space-y-1">
                       <p className="text-xs text-slate-400">Customer</p>
-                      <p className="truncate text-sm text-slate-100">
+                      <p className="truncate text-sm font-semibold text-slate-100">
                         {payer.name}
                       </p>
                     </div>
-                    <div>
+
+                    <div className="space-y-1">
                       <p className="text-xs text-slate-400">Email</p>
-                      <p className="truncate text-sm text-slate-100">
+                      <p className="truncate text-sm text-slate-200">
                         {payer.email}
                       </p>
                     </div>
-                    <div>
+
+                    <div className="space-y-1">
                       <p className="text-xs text-slate-400">Paid invoices</p>
-                      <p className="truncate text-sm text-slate-100">
+                      <p className="text-sm text-slate-100">
                         {payer.paid_invoices}
                       </p>
                     </div>
-                    <div>
+
+                    <div className="space-y-1">
                       <p className="text-xs text-slate-400">Avg delay</p>
-                      <p className="truncate text-sm text-slate-100">
+                      <p className="text-sm text-amber-200">
                         {formatDelay(payer.avg_delay_days).replace('+', '')} late
                       </p>
                     </div>
