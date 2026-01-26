@@ -83,7 +83,7 @@ export default async function LatePayers() {
                 <Link
                   key={payer.customer_id}
                   href={`/dashboard/customers/${payer.customer_id}`}
-                  className="block rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-slate-100"
+                  className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
                 >
                   <div className="flex justify-between gap-4">
                     <div className="flex-1 space-y-1">

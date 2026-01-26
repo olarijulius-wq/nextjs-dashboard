@@ -50,14 +50,18 @@ export default async function Page() {
         </div>
       ) : (
         <>
-          <div className="rounded-xl border bg-white p-4 text-sm dark:bg-neutral-900 md:hidden">
-            <p className="text-slate-500 dark:text-slate-400">You have</p>
-            <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-              {totalLatePayers} late payers
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Average delay {formatDelay(averageDelay)}
-            </p>
+          <div className="md:hidden">
+            <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Late payers
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-50">
+                {totalLatePayers} late payers
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Clients with paid invoices that were settled after the due date.
+              </p>
+            </div>
           </div>
 
           {latePayers.length === 0 ? (
@@ -73,7 +77,7 @@ export default async function Page() {
                   <Link
                     key={payer.customer_id}
                     href={`/dashboard/customers/${payer.customer_id}`}
-                    className="block rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-slate-100"
+                    className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
                   >
                     <div className="flex justify-between gap-4">
                       {/* Vasak pool – nimi + email */}

@@ -12,9 +12,17 @@ export default async function LatestInvoices() {
 
   return (
     <div className="flex w-full flex-col md:col-span-4">
-      <h2 className={`${lusitana.className} mb-4 text-xl md:text-2xl`}>
-        Latest Invoices
-      </h2>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h2 className={`${lusitana.className} text-xl md:text-2xl`}>
+          Latest Invoices
+        </h2>
+        <Link
+          href="/dashboard/invoices"
+          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-sky-900/30 transition hover:bg-sky-400"
+        >
+          View all
+        </Link>
+      </div>
 
       <div className="flex grow flex-col justify-between rounded-md border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {isEmpty ? (
