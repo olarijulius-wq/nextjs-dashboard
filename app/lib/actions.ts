@@ -836,19 +836,17 @@ export async function authenticate(
             await recordLoginAttempt(normalizedEmail, false);
           }
           if (code === 'EMAIL_NOT_VERIFIED') {
-            return 'Palun kinnita esmalt oma e-post – vaata postkasti ja kliki verification lingile.';
+            return 'Please verify your email first — check your inbox and click the verification link.';
           }
           if (code === 'INVALID_CREDENTIALS') {
-            return 'Vale e-post või parool.';
+            return 'Invalid email or password.';
           }
-          return 'Midagi läks valesti. Proovi uuesti.';
-        case 'EMAIL_NOT_VERIFIED':
-          return 'Palun kinnita esmalt oma e-post – vaata postkasti ja kliki verification lingile.';
+          return 'Something went wrong. Please try again.';
         default:
-          return 'Midagi läks valesti. Proovi uuesti.';
+          return 'Something went wrong. Please try again.';
       }
     }
     console.error('Unexpected login error', error);
-    return 'Midagi läks valesti. Proovi uuesti.';
+    return 'Something went wrong. Please try again.';
   }
 }
