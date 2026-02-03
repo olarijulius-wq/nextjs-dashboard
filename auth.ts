@@ -13,18 +13,6 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
  
-async function getUser(email: string): Promise<User | undefined> {
-  try {
-    const normalizedEmail = normalizeEmail(email);
-    const user =
-      await sql<User[]>`SELECT * FROM users WHERE lower(email) = ${normalizedEmail}`;
-    return user[0];
-  } catch (error) {
-    console.error('Failed to fetch user:', error);
-    throw new Error('Failed to fetch user.');
-  }
-}
- 
 export const { auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
@@ -33,23 +21,46 @@ export const { auth, signIn, signOut } = NextAuth({
         const parsedCredentials = z
           .object({ email: z.string().email(), password: z.string().min(6) })
           .safeParse(credentials);
- 
-        if (parsedCredentials.success) {
-          const { email, password } = parsedCredentials.data;
-          const user = await getUser(email);
-          if (!user) return null;
-          const passwordsMatch = await bcrypt.compare(password, user.password);
 
-          if (passwordsMatch) {
-            if (!user.is_verified) {
-              throw new AuthError('EMAIL_NOT_VERIFIED');
-            }
-            return user;
-          }
+        if (!parsedCredentials.success) {
+          return null;
         }
- 
-        console.log('Invalid credentials');
-        return null;
+
+        const { email, password } = parsedCredentials.data;
+        const normalizedEmail = normalizeEmail(email);
+        const [user] = await sql<{
+          id: string;
+          name: string | null;
+          email: string;
+          password: string;
+          is_verified: boolean;
+        }[]>`
+          select id, name, email, password, is_verified
+          from users
+          where lower(email) = ${normalizedEmail}
+          limit 1
+        `;
+
+        if (!user) {
+          throw new AuthError('CredentialsSignin', {
+            cause: { code: 'INVALID_CREDENTIALS' },
+          } as any);
+        }
+
+        const passwordsMatch = await bcrypt.compare(password, user.password);
+        if (!passwordsMatch) {
+          throw new AuthError('CredentialsSignin', {
+            cause: { code: 'INVALID_CREDENTIALS' },
+          } as any);
+        }
+
+        if (!user.is_verified) {
+          throw new AuthError('CredentialsSignin', {
+            cause: { code: 'EMAIL_NOT_VERIFIED' },
+          } as any);
+        }
+
+        return user as User;
       },
     }),
   ],

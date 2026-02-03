@@ -794,8 +794,10 @@ export async function authenticate(
   formData: FormData,
 ) {
   const emailValue = formData.get('email');
-  const normalizedEmail =
-    typeof emailValue === 'string' ? normalizeEmail(emailValue) : null;
+  const email = typeof emailValue === 'string' ? emailValue : '';
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+  const passwordValue = formData.get('password');
+  const password = typeof passwordValue === 'string' ? passwordValue : '';
 
   try {
     if (normalizedEmail) {
@@ -815,25 +817,38 @@ export async function authenticate(
       }
     }
 
-    await signIn('credentials', formData);
+    await signIn('credentials', {
+      email,
+      password,
+      redirectTo: formData.get('redirectTo')?.toString() || '/dashboard',
+    });
 
     if (normalizedEmail) {
       await recordLoginAttempt(normalizedEmail, true);
     }
   } catch (error) {
     if (error instanceof AuthError) {
+      // @ts-ignore - cause is loosely typed in next-auth
+      const code = error.cause?.code as string | undefined;
       switch (error.type) {
         case 'CredentialsSignin':
           if (normalizedEmail) {
             await recordLoginAttempt(normalizedEmail, false);
           }
-          return 'Invalid credentials.';
+          if (code === 'EMAIL_NOT_VERIFIED') {
+            return 'Palun kinnita esmalt oma e-post – vaata postkasti ja kliki verification lingile.';
+          }
+          if (code === 'INVALID_CREDENTIALS') {
+            return 'Vale e-post või parool.';
+          }
+          return 'Midagi läks valesti. Proovi uuesti.';
         case 'EMAIL_NOT_VERIFIED':
-          return 'Please verify your email first – check your inbox for the verification link.';
+          return 'Palun kinnita esmalt oma e-post – vaata postkasti ja kliki verification lingile.';
         default:
-          return 'Something went wrong.';
+          return 'Midagi läks valesti. Proovi uuesti.';
       }
     }
-    throw error;
+    console.error('Unexpected login error', error);
+    return 'Midagi läks valesti. Proovi uuesti.';
   }
 }
