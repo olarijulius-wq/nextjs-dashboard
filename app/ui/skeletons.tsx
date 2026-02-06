@@ -5,7 +5,7 @@ const shimmer =
 export function CardSkeleton() {
   return (
     <div
-      className={`${shimmer} relative overflow-hidden rounded-xl bg-slate-900 p-2 shadow-sm`}
+      className={`${shimmer} relative overflow-hidden rounded-2xl bg-slate-900/80 p-2 shadow-sm`}
     >
       <div className="flex p-4">
         <div className="h-5 w-5 rounded-md bg-slate-800" />
@@ -33,7 +33,7 @@ export function RevenueChartSkeleton() {
   return (
     <div className={`${shimmer} relative w-full overflow-hidden md:col-span-4`}>
       <div className="mb-4 h-8 w-36 rounded-md bg-slate-900" />
-      <div className="rounded-xl bg-slate-900 p-4">
+      <div className="rounded-2xl bg-slate-900/80 p-4">
         <div className="sm:grid-cols-13 mt-0 grid h-[410px] grid-cols-12 items-end gap-2 rounded-md bg-slate-950/60 p-4 md:gap-4" />
         <div className="flex items-center pb-2 pt-6">
           <div className="h-5 w-5 rounded-full bg-slate-800" />
@@ -65,7 +65,7 @@ export function LatestInvoicesSkeleton() {
       className={`${shimmer} relative flex w-full flex-col overflow-hidden md:col-span-4`}
     >
       <div className="mb-4 h-8 w-36 rounded-md bg-slate-900" />
-      <div className="flex grow flex-col justify-between rounded-xl bg-slate-900 p-4">
+      <div className="flex grow flex-col justify-between rounded-2xl bg-slate-900/80 p-4">
         <div className="bg-slate-950/60 px-6">
           <InvoiceSkeleton />
           <InvoiceSkeleton />
@@ -167,7 +167,7 @@ export function InvoicesTableSkeleton() {
   return (
     <div className="mt-6 flow-root">
       <div className="inline-block min-w-full align-middle">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2 md:pt-0">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-2 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:pt-0">
           <div className="md:hidden">
             <InvoicesMobileSkeleton />
             <InvoicesMobileSkeleton />

@@ -20,11 +20,11 @@ export default async function RevenueChart() {
 
   return (
     <div className="w-full">
-      <h2 className={`${lusitana.className} mb-4 text-xl md:text-2xl`}>
+      <h2 className={`${lusitana.className} mb-4 text-xl text-slate-100 md:text-2xl`}>
         Recent Revenue
       </h2>
 
-      <div className="w-full rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <RevenueChartClient chartData={chartData} />
       </div>
     </div>

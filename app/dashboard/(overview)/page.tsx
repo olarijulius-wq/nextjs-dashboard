@@ -19,7 +19,9 @@ export const metadata: Metadata = {
 export default async function Page() {
   return (
     <main className="space-y-6">
-      <h1 className={`${lusitana.className} text-xl md:text-2xl`}>Dashboard</h1>
+      <h1 className={`${lusitana.className} text-xl text-slate-100 md:text-2xl`}>
+        Dashboard
+      </h1>
 
       {/* Cards ALATI üleval ja oma grid’is */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

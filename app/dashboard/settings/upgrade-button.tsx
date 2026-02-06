@@ -45,7 +45,7 @@ export default function UpgradeButton({
       disabled={loading || disabled}
       className={
         className ??
-        'rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90 disabled:opacity-50'
+        'rounded-xl border border-sky-500/40 bg-sky-500/80 px-4 py-2 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50'
       }
     >
       {loading ? 'Redirecting...' : label}

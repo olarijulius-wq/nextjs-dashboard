@@ -41,7 +41,7 @@ export default function LoginForm() {
 
   return (
     <form action={formAction} className="space-y-3" onSubmit={handleSubmit}>
-      <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="flex-1 rounded-2xl border border-slate-800 bg-slate-900/80 px-6 pb-4 pt-8 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
 
         {/* ✅ SIGNUP SUCCESS MESSAGE */}
         {signupSuccess && (
@@ -72,7 +72,7 @@ export default function LoginForm() {
                 placeholder="Enter your email address"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="peer block w-full rounded-md border border-slate-800 bg-slate-950/60 py-[9px] pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                className="peer block w-full rounded-xl border border-slate-800 bg-slate-950/60 py-[9px] pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
               />
               <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 transition peer-focus:text-sky-300" />
             </div>
@@ -96,7 +96,7 @@ export default function LoginForm() {
                 placeholder="Enter password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="peer block w-full rounded-md border border-slate-800 bg-slate-950/60 py-[9px] pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                className="peer block w-full rounded-xl border border-slate-800 bg-slate-950/60 py-[9px] pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
               />
               <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 transition peer-focus:text-sky-300" />
             </div>

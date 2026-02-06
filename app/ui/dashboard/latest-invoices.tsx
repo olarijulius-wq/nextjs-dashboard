@@ -13,20 +13,20 @@ export default async function LatestInvoices() {
   return (
     <div className="flex w-full flex-col md:col-span-4">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h2 className={`${lusitana.className} text-xl md:text-2xl`}>
+        <h2 className={`${lusitana.className} text-xl text-slate-100 md:text-2xl`}>
           Latest Invoices
         </h2>
         <Link
           href="/dashboard/invoices"
-          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-sky-900/30 transition hover:bg-sky-400"
+          className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
         >
           View all
         </Link>
       </div>
 
-      <div className="flex grow flex-col justify-between rounded-md border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="flex grow flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {isEmpty ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-6">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-6">
             <p className="text-sm text-slate-200">
               No invoices yet. Create your first invoice to see activity here.
             </p>
@@ -34,20 +34,20 @@ export default async function LatestInvoices() {
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 href="/dashboard/customers"
-                className="inline-flex items-center rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-white hover:bg-sky-400"
+                className="inline-flex items-center rounded-xl border border-sky-500/40 bg-sky-500/80 px-3 py-2 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01]"
               >
                 Add customer
               </Link>
               <Link
                 href="/dashboard/invoices/create"
-                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm font-medium text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
               >
                 Create invoice
               </Link>
             </div>
           </div>
         ) : (
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
             <div className="space-y-3 md:hidden">
               {latestInvoices.map((invoice) => {
                 const invoiceLabel = invoice.invoice_number
@@ -57,7 +57,7 @@ export default async function LatestInvoices() {
                 return (
                   <div
                     key={invoice.id}
-                    className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
+                    className="rounded-xl border border-slate-800 bg-slate-950/70 p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -103,7 +103,7 @@ export default async function LatestInvoices() {
                   <div
                     key={invoice.id}
                     className={clsx(
-                      'grid grid-cols-[120px_minmax(0,1fr)_120px_110px] items-center gap-4 px-2 py-3 text-slate-200',
+                      'grid grid-cols-[120px_minmax(0,1fr)_120px_110px] items-center gap-4 px-2 py-3 text-slate-200 transition hover:bg-slate-900/60',
                       { 'border-t border-slate-800': i !== 0 },
                     )}
                   >

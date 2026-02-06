@@ -27,7 +27,7 @@ export default async function LatePayers() {
             </Link>
             <Link
               href="/dashboard/late-payers"
-              className="inline-flex items-center rounded-md bg-sky-500 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-sky-900/30 transition hover:bg-sky-400"
+              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
             >
               View all late payers
             </Link>
@@ -39,7 +39,7 @@ export default async function LatePayers() {
             </h2>
             <div className="flex flex-col items-end gap-1">
               <span
-                className="inline-flex cursor-not-allowed items-center rounded-md bg-sky-500/40 px-3 py-2 text-xs font-semibold text-white/70 opacity-60"
+                className="inline-flex cursor-not-allowed items-center rounded-xl border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold text-slate-400 opacity-60"
                 aria-disabled="true"
                 title="Available on Solo, Pro, and Studio plans"
               >
@@ -53,9 +53,9 @@ export default async function LatePayers() {
         )}
       </div>
 
-      <div className="flex grow flex-col rounded-md border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="flex grow flex-col rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {!canView ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-6">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-6">
             <p className="text-sm text-slate-100">
               See which clients consistently pay late and how many days they
               delay payments.
@@ -65,13 +65,13 @@ export default async function LatePayers() {
             </p>
             <Link
               href="/dashboard/settings"
-              className="mt-4 inline-flex items-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm shadow-amber-900/30 transition hover:bg-amber-300"
+              className="mt-4 inline-flex items-center rounded-xl border border-sky-500/40 bg-sky-500/80 px-3 py-2 text-xs font-semibold text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01]"
             >
               View plans
             </Link>
           </div>
         ) : isEmpty ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-6">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-6">
             <p className="text-sm text-slate-200">
               No late payer data yet. Late payments will appear here.
             </p>
@@ -83,7 +83,7 @@ export default async function LatePayers() {
                 <Link
                   key={payer.customer_id}
                   href={`/dashboard/customers/${payer.customer_id}`}
-                  className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
+                  className="block rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
                 >
                   <div className="flex justify-between gap-4">
                     <div className="flex-1 space-y-1">
@@ -121,7 +121,7 @@ export default async function LatePayers() {
               ))}
             </div>
 
-            <div className="hidden rounded-lg border border-slate-800 bg-slate-950/60 md:block">
+            <div className="hidden rounded-xl border border-slate-800 bg-slate-950/60 md:block">
               <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-4 border-b border-slate-800 px-4 py-3 text-xs uppercase tracking-[0.12em] text-slate-500">
                 <span>Name</span>
                 <span>Email</span>

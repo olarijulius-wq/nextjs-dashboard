@@ -46,7 +46,7 @@ export default function PublicPayButton({
       disabled={isLoading}
       className={
         className ??
-        'rounded-md border border-emerald-500/40 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60'
+        'rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition duration-200 ease-out hover:border-emerald-400/70 hover:bg-emerald-500/20 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60'
       }
     >
       {isLoading ? 'Redirecting...' : 'Pay now'}

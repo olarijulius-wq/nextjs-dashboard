@@ -37,9 +37,9 @@ export default function NavLinks() {
             key={link.name}
             href={link.href}
             className={clsx(
-              'flex h-[48px] grow items-center justify-center gap-2 rounded-md border border-slate-800 bg-slate-900/80 p-3 text-sm font-medium text-slate-200 transition duration-150 hover:-translate-y-px hover:border-sky-400/60 hover:bg-slate-800/80 hover:text-white md:flex-none md:justify-start md:p-2 md:px-3',
+              'flex h-[48px] grow items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm font-medium text-slate-300 transition duration-200 ease-out hover:border-slate-600 hover:bg-slate-900/80 hover:text-slate-100 hover:scale-[1.01] md:flex-none md:justify-start md:p-2 md:px-3',
               {
-                'border-sky-400/70 bg-slate-800 text-white shadow-[0_0_0_1px_rgba(56,189,248,0.35)]':
+                'border-sky-400/50 bg-slate-900/80 text-white shadow-[0_0_0_1px_rgba(56,189,248,0.25)]':
                   pathname === link.href,
               },
             )}

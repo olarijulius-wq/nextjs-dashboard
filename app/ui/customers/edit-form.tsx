@@ -19,7 +19,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
 
   return (
     <form action={formAction}>
-      <div className="rounded-md border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:p-6">
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:p-6">
         {/* Customer Name */}
         <div className="mb-4">
           <label
@@ -36,7 +36,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
               placeholder="Enter customer name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="peer block w-full rounded-md border border-slate-800 bg-slate-950/60 py-2 pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+              className="peer block w-full rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
               aria-describedby="name-error"
               required
             />
@@ -67,7 +67,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
               placeholder="Enter email address"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="peer block w-full rounded-md border border-slate-800 bg-slate-950/60 py-2 pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+              className="peer block w-full rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
               aria-describedby="email-error"
               required
             />
@@ -92,7 +92,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
       <div className="mt-6 flex justify-end gap-4">
         <Link
           href="/dashboard/customers"
-          className="flex h-10 items-center rounded-lg border border-slate-800 bg-slate-900 px-4 text-sm font-medium text-slate-200 transition hover:border-sky-400/60 hover:bg-slate-800"
+          className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-900/60 px-4 text-sm font-medium text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
         >
           Cancel
         </Link>

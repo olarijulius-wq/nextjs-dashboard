@@ -49,8 +49,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     ? 'Download PDF'
     : 'Available on Solo, Pro, and Studio plans';
   const pdfBaseClass =
-    'rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-200';
-  const pdfEnabledClass = `${pdfBaseClass} transition hover:border-sky-400/60 hover:bg-slate-800/80`;
+    'rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100';
+  const pdfEnabledClass = `${pdfBaseClass} transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]`;
   const pdfDisabledClass = `${pdfBaseClass} cursor-not-allowed opacity-60`;
 
   return (
@@ -68,20 +68,20 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/dashboard/invoices/${invoice.id}/edit`}
-            className="rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/60 hover:bg-slate-800/80"
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
           >
             Edit
           </Link>
           <Link
             href="/dashboard/invoices"
-            className="rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/60 hover:bg-slate-800/80"
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
           >
             Back
           </Link>
         </div>
       </div>
 
-      <div className="rounded-md border border-slate-800 bg-slate-900/80 p-6">
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm text-slate-400">Amount</p>
@@ -105,7 +105,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           </div>
         </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           <div className="flex flex-col items-start gap-1">
             {canExportPdf ? (
               <Link
@@ -133,7 +133,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           <form action={updateStatus}>
             <button
               type="submit"
-              className="rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-200 transition hover:border-emerald-400/60 hover:bg-slate-800/80"
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 transition duration-200 ease-out hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:scale-[1.01]"
             >
               {statusLabel}
             </button>
@@ -145,7 +145,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         </div>
       </div>
 
-      <div className="rounded-md border border-slate-800 bg-slate-900/80 p-6">
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <p className="text-sm font-semibold text-slate-100">
           Client payment link
         </p>
@@ -157,7 +157,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             type="text"
             readOnly
             value={payLink}
-            className="w-full flex-1 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 outline-none"
+            className="w-full flex-1 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 outline-none"
           />
           <CopyLinkButton text={payLink} />
         </div>

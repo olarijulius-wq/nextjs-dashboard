@@ -29,7 +29,7 @@ export default async function Page(props: {
   return (
     <div className="w-full">
       {/* Title */}
-      <h1 className={`${lusitana.className} mb-3 text-xl md:text-2xl`}>
+      <h1 className={`${lusitana.className} mb-3 text-xl text-slate-100 md:text-2xl`}>
         Customers
       </h1>
 

@@ -73,11 +73,11 @@ export default async function SettingsPage(props: {
     ? connectStatus.payoutsEnabled
       ? {
           label: 'Payouts enabled',
-          className: 'bg-emerald-500/20 text-emerald-200',
+          className: 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-200',
         }
       : {
           label: 'Payouts not enabled yet',
-          className: 'bg-amber-500/20 text-amber-200',
+          className: 'border border-amber-500/30 bg-amber-500/20 text-amber-200',
         }
     : null;
 
@@ -118,26 +118,26 @@ export default async function SettingsPage(props: {
 
       {/* Checkout success / cancel teated */}
       {success && (
-        <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">
+        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">
           Payment successful. Your plan is updated.
         </div>
       )}
 
       {canceled && (
-        <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
           Payment canceled.
         </div>
       )}
 
       {/* Plan + limiit info */}
-      <div className="mb-4 rounded-md border border-slate-800 bg-slate-900/80 p-4">
+      <div className="mb-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <p className="mb-2 text-sm text-slate-300">
           Plan:{' '}
           <span
             className={
               plan !== 'free'
-                ? 'inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-200'
-                : 'inline-flex items-center rounded-full bg-slate-700/60 px-2 py-0.5 text-xs font-semibold text-slate-100'
+                ? 'inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-200'
+                : 'inline-flex items-center rounded-full border border-slate-600/60 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-100'
             }
           >
             {planConfig.name}
@@ -163,7 +163,7 @@ export default async function SettingsPage(props: {
         {plan !== 'free' && periodEndLabel && (
           <>
             {cancelAtPeriodEnd ? (
-              <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
+              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
                 <p className="text-sm font-semibold">Cancellation scheduled</p>
                 <p className="mt-1 text-sm text-amber-100/90">
                   Your access stays active until{' '}
@@ -192,7 +192,7 @@ export default async function SettingsPage(props: {
           return (
             <div
               key={planCard.id}
-              className="rounded-md border border-slate-800 bg-slate-900/80 p-4"
+              className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -201,7 +201,7 @@ export default async function SettingsPage(props: {
                       {planCard.title}
                     </h3>
                     {isCurrent && (
-                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-200">
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-200">
                         Current plan
                       </span>
                     )}
@@ -221,8 +221,8 @@ export default async function SettingsPage(props: {
                     disabled={isCurrent}
                     className={
                       isCurrent
-                        ? 'rounded-lg border border-slate-700 bg-slate-950 px-4 py-2 text-sm font-medium text-slate-300'
-                        : 'rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90'
+                        ? 'rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-2 text-sm font-medium text-slate-300'
+                        : 'rounded-xl border border-sky-500/40 bg-sky-500/80 px-4 py-2 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01]'
                     }
                   />
                 </div>
@@ -233,7 +233,7 @@ export default async function SettingsPage(props: {
       </div>
 
       {!stripeConnectAccountId && (
-        <div className="mb-6 rounded-md border border-slate-800 bg-slate-900/80 p-4">
+        <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
           <p className="mb-3 text-sm text-slate-300">
             Connect your Stripe account to receive payouts directly.
           </p>
@@ -251,7 +251,7 @@ export default async function SettingsPage(props: {
         payment method, or view invoices.
       </p>
 
-      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/80 p-4 space-y-2">
+      <div className="mt-6 space-y-2 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
         <h2 className="text-base font-semibold text-slate-100">Payouts</h2>
 
         {!connectStatus ? (
@@ -264,7 +264,7 @@ export default async function SettingsPage(props: {
             </p>
             <Link
               href="/dashboard/settings/payouts"
-              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white"
+              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm font-medium text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
             >
               Learn more about payouts
             </Link>
@@ -283,7 +283,7 @@ export default async function SettingsPage(props: {
             </p>
             <Link
               href="/dashboard/settings/payouts"
-              className="inline-flex items-center rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-sky-400"
+              className="inline-flex items-center rounded-xl border border-sky-500/40 bg-sky-500/80 px-3 py-2 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01]"
             >
               Open payouts
             </Link>

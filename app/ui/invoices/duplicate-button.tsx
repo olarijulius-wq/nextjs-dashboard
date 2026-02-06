@@ -22,11 +22,11 @@ export default function DuplicateInvoiceButton({ id }: { id: string }) {
       </form>
 
       {state?.ok === false && (
-        <div className="rounded-md border border-amber-400/50 bg-amber-500/10 p-3 text-amber-100">
+        <div className="rounded-xl border border-amber-400/50 bg-amber-500/10 p-3 text-amber-100">
           <p className="text-sm">{state.message}</p>
           {state.code === 'LIMIT_REACHED' && (
             <Link
-              className="mt-2 inline-flex items-center rounded-md border border-amber-300/40 px-3 py-2 text-sm font-medium text-amber-100 hover:bg-amber-500/10"
+              className="mt-2 inline-flex items-center rounded-xl border border-amber-300/40 px-3 py-2 text-sm font-medium text-amber-100 transition duration-200 ease-out hover:bg-amber-500/10 hover:scale-[1.01]"
               href="/dashboard/settings"
             >
               Upgrade to Pro

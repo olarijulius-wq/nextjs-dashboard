@@ -827,6 +827,15 @@ export async function authenticate(
       await recordLoginAttempt(normalizedEmail, true);
     }
   } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) {
+      throw error;
+    }
     if (error instanceof AuthError) {
       // @ts-ignore - cause is loosely typed in next-auth
       const code = error.cause?.code as string | undefined;
@@ -850,5 +859,4 @@ export async function authenticate(
     return 'Something went wrong. Please try again.';
   }
 }
-
 

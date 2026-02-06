@@ -8,10 +8,10 @@ export default function SideNav() {
   return (
     <div className="flex h-full flex-col gap-2 px-3 py-4 md:px-2">
       <Link
-        className="mb-2 flex h-20 items-end justify-start rounded-md border border-sky-500/50 bg-gradient-to-r from-sky-700 via-cyan-600 to-sky-500 p-4 shadow-lg shadow-sky-900/40 transition hover:shadow-sky-800/40 md:h-40"
+        className="mb-2 flex h-20 items-end justify-start rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.45)] transition md:h-40"
         href="/"
       >
-        <div className="w-32 text-white md:w-40">
+        <div className="w-32 text-slate-100 md:w-40">
           <AcmeLogo />
         </div>
       </Link>
@@ -24,7 +24,7 @@ export default function SideNav() {
             await signOut({ redirectTo: '/' });
           }}
         >
-          <button className="flex h-[48px] w-full grow items-center justify-center gap-2 rounded-md border border-slate-800 bg-slate-900/80 p-3 text-sm font-medium text-slate-200 transition hover:border-rose-500/60 hover:bg-slate-800/80 hover:text-white md:flex-none md:justify-start md:p-2 md:px-3">
+          <button className="flex h-[48px] w-full grow items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm font-medium text-slate-300 transition duration-200 ease-out hover:border-rose-500/60 hover:bg-rose-500/10 hover:text-rose-100 hover:scale-[1.01] md:flex-none md:justify-start md:p-2 md:px-3">
             <PowerIcon className="w-6" />
             <div className="hidden md:block">Sign Out</div>
           </button>

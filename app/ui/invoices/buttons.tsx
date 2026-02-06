@@ -6,7 +6,7 @@ export function CreateInvoice() {
   return (
     <Link
       href="/dashboard/invoices/create"
-      className="flex h-10 items-center rounded-lg bg-gradient-to-r from-sky-500 to-cyan-400 px-4 text-sm font-medium text-white shadow-lg shadow-sky-900/40 transition duration-150 hover:from-sky-400 hover:to-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      className="inline-flex h-10 items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/80 px-4 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
     >
       <span className="hidden md:block">Create Invoice</span>{' '}
       <PlusIcon className="h-5 md:ml-4" />
@@ -18,7 +18,7 @@ export function UpdateInvoice({ id }: { id: string }) {
   return (
     <Link
       href={`/dashboard/invoices/${id}/edit`}
-      className="rounded-md border border-slate-800 p-2 text-slate-200 transition hover:border-sky-400/60 hover:bg-slate-800/80"
+      className="rounded-xl border border-slate-700 bg-slate-900/60 p-2 text-slate-200 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.02]"
     >
       <PencilIcon className="w-5" />
     </Link>
@@ -31,7 +31,7 @@ export function DeleteInvoice({ id }: { id: string }) {
     <form action={deleteInvoiceWithId}>
       <button
         type="submit"
-        className="rounded-md border border-slate-800 p-2 text-slate-200 transition hover:border-rose-400/60 hover:bg-slate-800/80 hover:text-rose-200"
+        className="rounded-xl border border-slate-700 bg-slate-900/60 p-2 text-slate-200 transition duration-200 ease-out hover:border-rose-400/70 hover:bg-rose-500/10 hover:text-rose-200 hover:scale-[1.02]"
       >
         <span className="sr-only">Delete</span>
         <TrashIcon className="w-5" />

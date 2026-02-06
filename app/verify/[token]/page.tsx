@@ -20,12 +20,12 @@ function VerificationCard({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-12 text-slate-100">
-      <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900/80 p-6 text-center shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-center shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <h1 className="text-2xl font-semibold text-slate-100">{title}</h1>
         <p className="mt-3 text-sm text-slate-300">{message}</p>
         <Link
           href={ctaHref}
-          className="mt-6 inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-slate-600 hover:bg-slate-800"
+          className="mt-6 inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
           {ctaLabel}
         </Link>

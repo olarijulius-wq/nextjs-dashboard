@@ -11,8 +11,8 @@ export default function LoginPage() {
   return (
     <main className="flex items-center justify-center md:h-screen">
       <div className="relative mx-auto flex w-full max-w-[400px] flex-col space-y-2.5 p-4 md:-mt-32">
-        <div className="flex h-20 w-full items-end rounded-lg border border-sky-500/50 bg-gradient-to-r from-sky-600 via-cyan-500 to-sky-400 p-3 shadow-lg shadow-sky-900/40 md:h-36">
-          <div className="w-32 text-white md:w-36">
+        <div className="flex h-20 w-full items-end rounded-2xl border border-slate-800 bg-slate-900/80 p-3 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:h-36">
+          <div className="w-32 text-slate-100 md:w-36">
             <AcmeLogo />
           </div>
         </div>
@@ -21,7 +21,7 @@ export default function LoginPage() {
         </Suspense>
         <p className="mt-4 text-center text-sm text-slate-400">
           No account?{' '}
-          <a href="/signup" className="text-sky-400 hover:underline">
+          <a href="/signup" className="text-sky-300 hover:underline">
             Create one
           </a>
         </p>

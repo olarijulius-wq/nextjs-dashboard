@@ -42,7 +42,7 @@ export default async function Page(props: {
   return (
     <main>
       <div className="mb-3">
-        <h1 className={`${lusitana.className} text-xl md:text-2xl`}>
+        <h1 className={`${lusitana.className} text-xl text-slate-100 md:text-2xl`}>
           Invoices
         </h1>
       </div>
@@ -57,7 +57,7 @@ export default async function Page(props: {
           {!canCreate && (
             <a
               href="/dashboard/settings"
-              className="hidden items-center rounded-md border border-amber-400/50 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:border-amber-300 hover:text-amber-50 sm:inline-flex"
+              className="hidden items-center rounded-xl border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 transition duration-200 ease-out hover:border-amber-300 hover:bg-amber-500/20 hover:scale-[1.01] sm:inline-flex"
             >
               View all plans
             </a>
@@ -79,7 +79,7 @@ export default async function Page(props: {
             </p>
             <a
               href="/dashboard/settings"
-              className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm shadow-amber-900/30 transition hover:bg-amber-300"
+              className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-amber-400/50 bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-900 transition duration-200 ease-out hover:bg-amber-300 hover:scale-[1.01]"
             >
               View all plans
             </a>

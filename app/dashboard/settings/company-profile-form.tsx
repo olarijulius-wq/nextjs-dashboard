@@ -36,7 +36,7 @@ export default function CompanyProfileForm({
   );
 
   return (
-    <form action={formAction} className="rounded-md border border-slate-800 bg-slate-900/80 p-4">
+    <form action={formAction} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-100">Company profile</h2>
@@ -61,7 +61,7 @@ export default function CompanyProfileForm({
             type="text"
             value={companyName}
             onChange={(event) => setCompanyName(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             required
             aria-describedby="companyName-error"
           />
@@ -84,7 +84,7 @@ export default function CompanyProfileForm({
             type="text"
             value={regCode}
             onChange={(event) => setRegCode(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="regCode-error"
           />
           <div id="regCode-error" aria-live="polite" aria-atomic="true">
@@ -106,7 +106,7 @@ export default function CompanyProfileForm({
             type="text"
             value={vatNumber}
             onChange={(event) => setVatNumber(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="vatNumber-error"
           />
           <div id="vatNumber-error" aria-live="polite" aria-atomic="true">
@@ -128,7 +128,7 @@ export default function CompanyProfileForm({
             type="text"
             value={addressLine1}
             onChange={(event) => setAddressLine1(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="addressLine1-error"
           />
           <div id="addressLine1-error" aria-live="polite" aria-atomic="true">
@@ -150,7 +150,7 @@ export default function CompanyProfileForm({
             type="text"
             value={addressLine2}
             onChange={(event) => setAddressLine2(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="addressLine2-error"
           />
           <div id="addressLine2-error" aria-live="polite" aria-atomic="true">
@@ -172,7 +172,7 @@ export default function CompanyProfileForm({
             type="text"
             value={city}
             onChange={(event) => setCity(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="city-error"
           />
           <div id="city-error" aria-live="polite" aria-atomic="true">
@@ -194,7 +194,7 @@ export default function CompanyProfileForm({
             type="text"
             value={country}
             onChange={(event) => setCountry(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="country-error"
           />
           <div id="country-error" aria-live="polite" aria-atomic="true">
@@ -216,7 +216,7 @@ export default function CompanyProfileForm({
             type="text"
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="phone-error"
           />
           <div id="phone-error" aria-live="polite" aria-atomic="true">
@@ -238,7 +238,7 @@ export default function CompanyProfileForm({
             type="email"
             value={billingEmail}
             onChange={(event) => setBillingEmail(event.target.value)}
-            className="block w-full rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+            className="block w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40"
             aria-describedby="billingEmail-error"
           />
           <div id="billingEmail-error" aria-live="polite" aria-atomic="true">

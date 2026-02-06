@@ -26,7 +26,7 @@ export default async function Page() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className={`${lusitana.className} mb-2 text-xl md:text-2xl`}>
+        <h1 className={`${lusitana.className} mb-2 text-xl text-slate-100 md:text-2xl`}>
           Late payers
         </h1>
         <p className="text-sm text-slate-400">
@@ -43,7 +43,7 @@ export default async function Page() {
           </p>
           <Link
             href="/dashboard/settings"
-            className="mt-4 inline-flex items-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm shadow-amber-900/30 transition hover:bg-amber-300"
+            className="mt-4 inline-flex items-center rounded-xl border border-amber-400/50 bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-900 transition duration-200 ease-out hover:bg-amber-300 hover:scale-[1.01]"
           >
             View plans
           </Link>
@@ -51,7 +51,7 @@ export default async function Page() {
       ) : (
         <>
           <div className="md:hidden">
-            <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+            <div className="mb-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
               <p className="text-xs uppercase tracking-wide text-slate-500">
                 Late payers
               </p>
@@ -77,7 +77,7 @@ export default async function Page() {
                   <Link
                     key={payer.customer_id}
                     href={`/dashboard/customers/${payer.customer_id}`}
-                    className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
+                    className="block rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
                   >
                     <div className="flex justify-between gap-4">
                       {/* Vasak pool – nimi + email */}
@@ -118,7 +118,7 @@ export default async function Page() {
               </div>
 
               {/* DESKTOP: jäta oma olemasolev tabel / grid siia */}
-              <div className="hidden rounded-md border border-slate-800 bg-slate-900/80 md:block">
+              <div className="hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-[0_18px_35px_rgba(0,0,0,0.35)] md:block">
                 <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_140px_160px] gap-4 border-b border-slate-800 px-6 py-3 text-xs uppercase tracking-[0.12em] text-slate-500">
                   <span>Customer</span>
                   <span>Email</span>

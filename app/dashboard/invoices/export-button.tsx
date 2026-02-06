@@ -66,7 +66,7 @@ export default function ExportInvoicesButton({
         title={title}
         aria-disabled={loading || !canExportCsv}
         disabled={loading || !canExportCsv}
-        className="secondary"
+        variant="secondary"
       >
         {loading ? 'Exporting…' : 'Export CSV'}
       </Button>

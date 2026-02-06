@@ -83,7 +83,7 @@ export default async function Page(props: PageProps) {
             Payment was canceled.
           </div>
         )}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-6 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-400">
@@ -104,7 +104,7 @@ export default async function Page(props: PageProps) {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-2">
+          <div className="mt-6 grid gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-2">
             <div>
               <p className="text-xs text-slate-400">Issued</p>
               <p className="text-sm text-slate-200">
@@ -132,7 +132,7 @@ export default async function Page(props: PageProps) {
           </div>
 
           {invoice.notes && (
-            <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
               <p className="text-xs uppercase tracking-wide text-slate-400">
                 Notes
               </p>

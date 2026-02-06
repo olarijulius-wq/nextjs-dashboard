@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 const primaryButtonClasses =
-  'flex h-10 items-center justify-center rounded-lg bg-gradient-to-r from-sky-500 to-cyan-400 px-4 text-sm font-medium text-white shadow-lg shadow-sky-900/40 transition duration-150 hover:from-sky-400 hover:to-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 active:from-sky-600 active:to-cyan-500';
+  'flex h-10 items-center justify-center rounded-xl border border-sky-500/40 bg-sky-500/80 px-4 text-sm font-medium text-slate-950 transition duration-200 ease-out hover:bg-sky-400/90 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950';
 
 export default async function PayoutsPage() {
   const email = await requireUserEmail();
@@ -38,7 +38,7 @@ export default async function PayoutsPage() {
       <h1 className="mb-4 text-2xl font-semibold text-slate-100">Payouts</h1>
 
       {!status ? (
-        <div className="rounded-md border border-slate-800 bg-slate-900/80 p-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
           <p className="mb-4 text-sm text-slate-300">
             You haven&apos;t connected Stripe yet.
           </p>
@@ -51,7 +51,7 @@ export default async function PayoutsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
             <div className="mb-3">
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusPill?.className ?? ''}`}

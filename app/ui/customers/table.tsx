@@ -20,14 +20,14 @@ export default async function CustomersTable({
   return (
     <div className="mt-6 flow-root">
       <div className="overflow-x-auto overflow-y-visible">
-        <div className="inline-block min-w-full align-middle">
-          <div className="overflow-visible rounded-md border border-slate-800 bg-slate-900/80 p-2 md:pt-0">
-            <div className="md:hidden">
-              {customers?.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="mb-2 w-full rounded-md border border-slate-800 bg-slate-950/60 p-4"
-                >
+          <div className="inline-block min-w-full align-middle">
+            <div className="overflow-visible rounded-2xl border border-slate-800 bg-slate-900/80 p-2 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:pt-0">
+              <div className="md:hidden">
+                {customers?.map((customer) => (
+                  <div
+                    key={customer.id}
+                    className="mb-2 w-full rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+                  >
                   <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                     <div>
                       <div className="mb-2 flex items-center">
@@ -82,7 +82,7 @@ export default async function CustomersTable({
             </div>
 
             <table className="hidden min-w-full rounded-md text-slate-100 md:table">
-              <thead className="rounded-md bg-slate-950/40 text-left text-sm font-semibold text-slate-300">
+              <thead className="rounded-md bg-slate-950/40 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                 <tr>
                   <th scope="col" className="px-4 py-5 font-medium sm:pl-6">
                     Name
@@ -105,10 +105,10 @@ export default async function CustomersTable({
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-800 text-slate-100">
+              <tbody className="divide-y divide-slate-800 text-slate-200">
                 {customers.map((customer) => (
-                  <tr key={customer.id} className="group">
-                    <td className="whitespace-nowrap bg-slate-900/60 py-5 pl-4 pr-3 text-sm text-slate-100 group-first-of-type:rounded-md group-last-of-type:rounded-md sm:pl-6">
+                  <tr key={customer.id} className="group transition hover:bg-slate-900/60">
+                    <td className="whitespace-nowrap py-5 pl-4 pr-3 text-sm text-slate-100 group-first-of-type:rounded-xl group-last-of-type:rounded-xl sm:pl-6">
                       <div className="flex items-center gap-3">
                         {customer.image_url ? (
                           <Image
@@ -129,19 +129,19 @@ export default async function CustomersTable({
                         </Link>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-slate-200">
+                    <td className="whitespace-nowrap px-4 py-5 text-sm text-slate-300">
                       {customer.email}
                     </td>
-                    <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-slate-200">
+                    <td className="whitespace-nowrap px-4 py-5 text-sm text-slate-300">
                       {customer.total_invoices}
                     </td>
-                    <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-sky-200">
+                    <td className="whitespace-nowrap px-4 py-5 text-sm text-sky-200">
                       {customer.total_pending}
                     </td>
-                    <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-sm text-emerald-200 group-first-of-type:rounded-md group-last-of-type:rounded-md">
+                    <td className="whitespace-nowrap px-4 py-5 text-sm text-emerald-200 group-first-of-type:rounded-xl group-last-of-type:rounded-xl">
                       {customer.total_paid}
                     </td>
-                    <td className="whitespace-nowrap bg-slate-900/60 px-4 py-5 text-center text-sm ...">
+                    <td className="whitespace-nowrap px-4 py-5 text-center text-sm ...">
                       <div className="flex justify-center gap-3">
                         <UpdateCustomer id={customer.id} />
                         <DeleteCustomer id={customer.id} />

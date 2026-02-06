@@ -23,7 +23,7 @@ export default function CopyLinkButton({ text }: CopyLinkButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
-      className="rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-sky-400/60 hover:bg-slate-800/80"
+      className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
     >
       {copied ? 'Copied' : 'Copy link'}
     </button>
