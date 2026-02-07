@@ -56,7 +56,7 @@ export const { auth, signIn, signOut } = NextAuth({
 
         if (!user.is_verified) {
           throw new AuthError('CredentialsSignin', {
-            cause: { code: 'EMAIL_NOT_VERIFIED' },
+            cause: { code: 'EMAIL_NOT_VERIFIED', email: user.email },
           } as any);
         }
 

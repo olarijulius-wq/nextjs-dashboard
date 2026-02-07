@@ -24,9 +24,16 @@ const formatEuroFromCents = (value: number) =>
 
 export function RevenueChartClient({ chartData }: { chartData: ChartDatum[] }) {
   return (
-    <div className="h-60 rounded-xl border border-slate-800 bg-slate-950/60 p-3 md:h-80 md:p-4">
+    <div
+      className="h-60 rounded-xl border border-slate-800 bg-slate-950/60 p-3 [&_.recharts-surface:focus]:outline-none [&_.recharts-surface:focus-visible]:outline-none md:h-80 md:p-4"
+      style={{ WebkitTapHighlightColor: 'transparent' }}
+    >
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+        <LineChart
+          accessibilityLayer={false}
+          data={chartData}
+          margin={{ top: 10, right: 10, left: 0, bottom: 10 }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
           <XAxis
             dataKey="month"

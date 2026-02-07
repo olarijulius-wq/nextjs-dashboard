@@ -8,9 +8,22 @@ import {
 } from '@heroicons/react/24/outline';
 import { ArrowRightIcon } from '@heroicons/react/20/solid';
 import { Button } from '@/app/ui/button';
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
 import { authenticate } from '@/app/lib/actions';
+import { initialLoginState } from '@/app/lib/login-state';
 import { useSearchParams } from 'next/navigation';
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button className="mt-4 w-full" aria-disabled={pending}>
+      Log in
+      <ArrowRightIcon className="ml-auto h-5 w-5 text-white" />
+    </Button>
+  );
+}
 
 export default function LoginForm() {
   const searchParams = useSearchParams();
@@ -18,25 +31,48 @@ export default function LoginForm() {
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const signupSuccess = searchParams.get('signup') === 'success';
 
-  const [errorMessage, formAction, isPending] = useActionState(
+  const [state, formAction] = useFormState(
     authenticate,
-    undefined,
+    initialLoginState,
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitCount, setSubmitCount] = useState(0);
+  const [resent, setResent] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
   const lastClearedSubmit = useRef(0);
 
   useEffect(() => {
-    if (errorMessage && submitCount !== lastClearedSubmit.current) {
+    if (state.message && submitCount !== lastClearedSubmit.current) {
       lastClearedSubmit.current = submitCount;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPassword('');
     }
-  }, [errorMessage, submitCount]);
+  }, [state.message, submitCount]);
 
   const handleSubmit = () => {
     setSubmitCount((count) => count + 1);
+    setResent(false);
+    setResendError(null);
+  };
+
+  async function handleResend() {
+    setResent(false);
+    setResendError(null);
+
+    if (!state.email) return;
+
+    try {
+      await fetch('/api/account/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: state.email }),
+      });
+      setResent(true);
+    } catch (error) {
+      console.error(error);
+      setResendError('Could not resend email. Try again later.');
+    }
   };
 
   return (
@@ -107,10 +143,7 @@ export default function LoginForm() {
         <input type="hidden" name="redirectTo" value={callbackUrl} />
 
         {/* SUBMIT */}
-        <Button className="mt-4 w-full" aria-disabled={isPending}>
-          Log in
-          <ArrowRightIcon className="ml-auto h-5 w-5 text-white" />
-        </Button>
+        <SubmitButton />
 
         {/* ERROR MESSAGE */}
         <div
@@ -118,13 +151,33 @@ export default function LoginForm() {
           aria-live="polite"
           aria-atomic="true"
         >
-          {errorMessage && (
+          {state.message && (
             <>
               <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
-              <p className="text-sm text-red-500">{errorMessage}</p>
+              <p className="text-sm text-red-500">{state.message}</p>
             </>
           )}
         </div>
+
+        {state.needsVerification && (
+          <div className="mt-2 space-y-1 text-sm">
+            <button
+              type="button"
+              onClick={handleResend}
+              className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-100 hover:border-slate-500 hover:bg-slate-900"
+            >
+              Send verification email
+            </button>
+            {resent && (
+              <p className="text-xs text-slate-400">
+                Verification email sent. Check your inbox/spam.
+              </p>
+            )}
+            {resendError && (
+              <p className="text-xs text-red-400">{resendError}</p>
+            )}
+          </div>
+        )}
       </div>
     </form>
   );

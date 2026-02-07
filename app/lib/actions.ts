@@ -12,6 +12,7 @@ import { getNextInvoiceNumber, upsertCompanyProfile } from '@/app/lib/data';
 import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from '@/app/lib/config';
 import { checkRateLimit } from '@/app/lib/rate-limit';
 import { sendEmailVerification } from '@/app/lib/email';
+import type { LoginState } from '@/app/lib/login-state';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -790,9 +791,9 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
 }
 
 export async function authenticate(
-  prevState: string | undefined,
+  prevState: LoginState,
   formData: FormData,
-) {
+): Promise<LoginState> {
   const emailValue = formData.get('email');
   const email = typeof emailValue === 'string' ? emailValue : '';
   const normalizedEmail = email ? normalizeEmail(email) : null;
@@ -808,12 +809,20 @@ export async function authenticate(
       );
 
       if (!rate.ok) {
-        return 'Too many login attempts. Please wait a few minutes and try again.';
+        return {
+          message: 'Too many login attempts. Please wait a few minutes and try again.',
+          needsVerification: false,
+          email: normalizedEmail ?? undefined,
+        };
       }
 
       const failedCount = await getRecentFailedLoginCount(normalizedEmail);
       if (failedCount >= 10) {
-        return 'Too many login attempts. Please try again in 15 minutes.';
+        return {
+          message: 'Too many login attempts. Please try again in 15 minutes.',
+          needsVerification: false,
+          email: normalizedEmail ?? undefined,
+        };
       }
     }
 
@@ -844,19 +853,36 @@ export async function authenticate(
           if (normalizedEmail) {
             await recordLoginAttempt(normalizedEmail, false);
           }
-          if (code === 'EMAIL_NOT_VERIFIED') {
-            return 'Please verify your email first — check your inbox and click the verification link.';
+          switch (code) {
+            case 'EMAIL_NOT_VERIFIED':
+              return {
+                message: 'User not verified. Please check your email.',
+                needsVerification: true,
+                email: normalizedEmail ?? undefined,
+              };
+            case 'INVALID_CREDENTIALS':
+            default:
+              return {
+                message: 'Wrong email or password.',
+                needsVerification: false,
+                email: normalizedEmail ?? undefined,
+              };
           }
-          if (code === 'INVALID_CREDENTIALS') {
-            return 'Invalid email or password.';
-          }
-          return 'Something went wrong. Please try again.';
         default:
-          return 'Something went wrong. Please try again.';
+          return {
+            message: 'Something went wrong. Please try again.',
+            needsVerification: false,
+            email: normalizedEmail ?? undefined,
+          };
       }
     }
     console.error('Unexpected login error', error);
-    return 'Something went wrong. Please try again.';
+    return {
+      message: 'Something went wrong. Please try again.',
+      needsVerification: false,
+      email: normalizedEmail ?? undefined,
+    };
   }
-}
 
+  return { message: null };
+}
