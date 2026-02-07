@@ -19,17 +19,21 @@ export default function InvoicesTable({
             {invoices?.map((invoice) => (
               <div
                 key={invoice.id}
-                className="mb-2 w-full rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+                className="mb-2 w-full rounded-xl border border-slate-800 bg-slate-900/80 p-4"
               >
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div>
+                  <div className="min-w-0">
                     <div className="mb-2 flex items-center">
                       <div className="mr-2 flex h-7 w-7 items-center justify-center rounded-full bg-slate-800/60 text-xs font-semibold text-slate-200">
                         {invoice.name.charAt(0).toUpperCase()}
                       </div>
-                      <p>{invoice.name}</p>
+                      <p className="truncate text-sm font-semibold text-slate-100">
+                        {invoice.name}
+                      </p>
                     </div>
-                    <p className="text-sm text-slate-400">{invoice.email}</p>
+                    <p className="truncate text-xs text-slate-400">
+                      {invoice.email}
+                    </p>
                   </div>
                   <div className="flex flex-col items-end">
                     <InvoiceStatus status={invoice.status} />
@@ -43,21 +47,24 @@ export default function InvoicesTable({
                 </div>
                 <div className="flex w-full items-center justify-between pt-4">
                   <div>
-                    <p className="text-xl font-medium">
+                    <p className="text-base font-semibold text-slate-100">
                       {formatCurrencySuffix(invoice.amount)}
                     </p>
                     <Link
                       href={`/dashboard/invoices/${invoice.id}`}
-                      className="text-sm text-slate-200 hover:text-slate-300"
+                      className="truncate text-xs text-slate-400 hover:text-slate-300"
                     >
                       {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
                     </Link>
-                    <p>{formatDateToLocal(invoice.date)}</p>
-                    <p className="text-sm text-slate-400">
-                      Due {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+                    <p className="text-xs text-slate-400">
+                      {formatDateToLocal(invoice.date)}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Due{' '}
+                      {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
                     </p>
                   </div>
-                  <div className="flex justify-end gap-2">
+                  <div className="flex shrink-0 justify-end gap-2">
                     {invoice.status !== 'paid' && (
                       <PayInvoiceButton
                         invoiceId={invoice.id}

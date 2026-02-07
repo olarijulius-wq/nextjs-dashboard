@@ -20,16 +20,16 @@ export default async function CustomersTable({
   return (
     <div className="mt-6 flow-root">
       <div className="overflow-x-auto overflow-y-visible">
-          <div className="inline-block min-w-full align-middle">
-            <div className="overflow-visible rounded-2xl border border-slate-800 bg-slate-900/80 p-2 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:pt-0">
-              <div className="md:hidden">
-                {customers?.map((customer) => (
-                  <div
-                    key={customer.id}
-                    className="mb-2 w-full rounded-xl border border-slate-800 bg-slate-950/60 p-4"
-                  >
+        <div className="inline-block min-w-full align-middle">
+          <div className="overflow-visible rounded-2xl border border-slate-800 bg-slate-900/80 p-2 shadow-[0_18px_35px_rgba(0,0,0,0.45)] md:pt-0">
+            <div className="md:hidden">
+              {customers?.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="mb-2 w-full rounded-xl border border-slate-800 bg-slate-900/80 p-4"
+                >
                   <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                    <div>
+                    <div className="min-w-0">
                       <div className="mb-2 flex items-center">
                         <div className="flex items-center gap-3">
                           {customer.image_url ? (
@@ -45,32 +45,34 @@ export default async function CustomersTable({
                           )}
                           <Link
                             href={`/dashboard/customers/${customer.id}`}
-                            className="text-slate-100 hover:text-slate-300"
+                            className="truncate text-slate-100 hover:text-slate-300"
                           >
                             {customer.name}
                           </Link>
                         </div>
                       </div>
-                      <p className="text-sm text-slate-400">{customer.email}</p>
+                      <p className="truncate text-xs text-slate-400">
+                        {customer.email}
+                      </p>
                     </div>
                   </div>
 
                   <div className="flex w-full items-center justify-between border-b border-slate-800 py-5">
                     <div className="flex w-1/2 flex-col">
                       <p className="text-xs text-slate-400">Pending</p>
-                      <p className="font-medium text-slate-300">
+                      <p className="text-sm font-medium text-slate-100">
                         {customer.total_pending}
                       </p>
                     </div>
                     <div className="flex w-1/2 flex-col">
                       <p className="text-xs text-slate-400">Paid</p>
-                      <p className="font-medium text-emerald-200">
+                      <p className="text-sm font-medium text-slate-100">
                         {customer.total_paid}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4 text-sm text-slate-300">
+                  <div className="flex items-center justify-between pt-4 text-sm text-slate-100">
                     <p>{customer.total_invoices} invoices</p>
                     <div className="flex justify-end gap-2">
                       <UpdateCustomer id={customer.id} />
@@ -107,7 +109,10 @@ export default async function CustomersTable({
 
               <tbody className="divide-y divide-slate-800 text-slate-200">
                 {customers.map((customer) => (
-                  <tr key={customer.id} className="group transition hover:bg-slate-900/60">
+                  <tr
+                    key={customer.id}
+                    className="group transition hover:bg-slate-900/60"
+                  >
                     <td className="whitespace-nowrap py-5 pl-4 pr-3 text-sm text-slate-100 group-first-of-type:rounded-xl group-last-of-type:rounded-xl sm:pl-6">
                       <div className="flex items-center gap-3">
                         {customer.image_url ? (
@@ -141,7 +146,7 @@ export default async function CustomersTable({
                     <td className="whitespace-nowrap px-4 py-5 text-sm text-emerald-200 group-first-of-type:rounded-xl group-last-of-type:rounded-xl">
                       {customer.total_paid}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-5 text-center text-sm ...">
+                    <td className="whitespace-nowrap px-4 py-5 text-center text-sm text-slate-200">
                       <div className="flex justify-center gap-3">
                         <UpdateCustomer id={customer.id} />
                         <DeleteCustomer id={customer.id} />
@@ -152,11 +157,8 @@ export default async function CustomersTable({
               </tbody>
             </table>
 
-            {/* Optional: kui list tühi */}
             {customers.length === 0 && (
-              <div className="p-6 text-sm text-slate-300">
-                No customers yet.
-              </div>
+              <div className="p-6 text-sm text-slate-300">No customers yet.</div>
             )}
           </div>
         </div>

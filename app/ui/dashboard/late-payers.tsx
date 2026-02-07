@@ -2,6 +2,7 @@ import { lusitana } from '@/app/ui/fonts';
 import { fetchLatePayerStats, fetchUserPlanAndUsage } from '@/app/lib/data';
 import { PLAN_CONFIG } from '@/app/lib/config';
 import Link from 'next/link';
+import { toolbarButtonClasses } from '@/app/ui/button';
 
 function formatDelay(days: number) {
   const rounded = Math.round(days);
@@ -27,7 +28,7 @@ export default async function LatePayers() {
             </Link>
             <Link
               href="/dashboard/late-payers"
-              className="inline-flex items-center rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
+              className={`${toolbarButtonClasses} h-9 px-3 text-xs`}
             >
               View all late payers
             </Link>
@@ -39,7 +40,7 @@ export default async function LatePayers() {
             </h2>
             <div className="flex flex-col items-end gap-1">
               <span
-                className="inline-flex cursor-not-allowed items-center rounded-xl border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold text-slate-400 opacity-60"
+                className={`${toolbarButtonClasses} h-9 cursor-not-allowed px-3 text-xs text-slate-400 opacity-60 hover:scale-100 hover:bg-slate-950/60 hover:text-slate-400`}
                 aria-disabled="true"
                 title="Available on Solo, Pro, and Studio plans"
               >
@@ -65,7 +66,7 @@ export default async function LatePayers() {
             </p>
             <Link
               href="/dashboard/settings"
-              className="mt-4 inline-flex items-center rounded-xl border border-slate-700/70 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-100 transition duration-200 ease-out hover:bg-slate-800 hover:scale-[1.01]"
+              className={`${toolbarButtonClasses} mt-4 h-9 px-3 text-xs`}
             >
               View plans
             </Link>
@@ -83,11 +84,11 @@ export default async function LatePayers() {
                 <Link
                   key={payer.customer_id}
                   href={`/dashboard/customers/${payer.customer_id}`}
-                  className="block rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
+                  className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-slate-100 shadow-[0_18px_35px_rgba(0,0,0,0.45)]"
                 >
                   <div className="flex justify-between gap-4">
                     <div className="flex-1 space-y-1">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                      <p className="text-xs text-slate-400">
                         Customer
                       </p>
                       <p className="truncate text-sm font-semibold text-slate-100">
@@ -100,7 +101,7 @@ export default async function LatePayers() {
 
                     <div className="flex flex-col items-end gap-1">
                       <div className="text-right">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                        <p className="text-xs text-slate-400">
                           Paid invoices
                         </p>
                         <p className="text-sm text-slate-100">
@@ -108,10 +109,10 @@ export default async function LatePayers() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                        <p className="text-xs text-slate-400">
                           Avg delay
                         </p>
-                        <p className="text-xs text-amber-200">
+                        <p className="text-sm text-slate-100">
                           {formatDelay(payer.avg_delay_days).replace('+', '')} late
                         </p>
                       </div>

@@ -213,7 +213,7 @@ export default async function SettingsPage(props: {
                         {planCard.highlight}
                       </p>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-col gap-2 sm:items-end">
                       <p className="text-xl font-semibold text-slate-100">
                         {planCard.price}
                       </p>

@@ -57,24 +57,24 @@ export default async function LatestInvoices() {
                 return (
                   <div
                     key={invoice.id}
-                    className="rounded-xl border border-slate-800 bg-slate-950/70 p-3"
+                    className="rounded-xl border border-slate-800 bg-slate-900/80 p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-semibold text-slate-300">
+                        <p className="text-xs text-slate-400">
                           {invoiceLabel}
                         </p>
-                        <p className="text-sm font-semibold text-slate-100">
+                        <p className="truncate text-sm font-semibold text-slate-100">
                           {invoice.name}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="truncate text-xs text-slate-400">
                           {invoice.email}
                         </p>
                       </div>
                       <InvoiceStatus status={invoice.status} />
                     </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-300">
-                      <span className={`${lusitana.className} text-sm text-slate-300`}>
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                      <span className={`${lusitana.className} text-sm text-slate-100`}>
                         {invoice.amount}
                       </span>
                       <span>

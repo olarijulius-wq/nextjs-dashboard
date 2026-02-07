@@ -4,6 +4,7 @@ import { Metadata } from 'next';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatCurrency, formatDateToLocal } from '@/app/lib/utils';
 import { fetchCustomerById, fetchInvoicesByCustomerId } from '@/app/lib/data';
+import { toolbarButtonClasses } from '@/app/ui/button';
 
 export const metadata: Metadata = {
   title: 'Customer',
@@ -45,7 +46,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         </div>
         <Link
           href="/dashboard/customers"
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 transition duration-200 ease-out hover:border-slate-500 hover:bg-slate-900/80 hover:scale-[1.01]"
+          className={`${toolbarButtonClasses} h-9 px-3`}
         >
           Back
         </Link>
@@ -101,8 +102,40 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             .
           </div>
         ) : (
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <table className="min-w-[600px] text-slate-100">
+          <>
+            <div className="space-y-2 md:hidden">
+              {invoices.map((invoice) => (
+                <Link
+                  key={invoice.id}
+                  href={`/dashboard/invoices/${invoice.id}`}
+                  className="block rounded-xl border border-slate-800 bg-slate-900/80 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-400">Invoice</p>
+                      <p className="truncate text-sm font-semibold text-slate-100">
+                        #{invoice.id.slice(0, 8)}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-400">
+                        {formatDateToLocal(invoice.date)}
+                      </p>
+                    </div>
+                    <InvoiceStatus status={invoice.status} />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-slate-400">Amount</p>
+                      <p className="text-sm text-slate-100">
+                        {formatCurrency(invoice.amount)}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-[600px] text-slate-100">
               <thead className="rounded-lg bg-slate-950/40 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                 <tr>
                   <th scope="col" className="px-4 py-5 font-medium sm:pl-6">
@@ -145,8 +178,9 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </main>
