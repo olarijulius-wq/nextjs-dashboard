@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import postgres from 'postgres';
 import UpgradeButton from './upgrade-button';
 import ManageBillingButton from './manage-billing-button';
 import {
@@ -16,13 +17,20 @@ import { PLAN_CONFIG, type PlanId } from '@/app/lib/config';
 import { auth } from '@/auth';
 import ConnectStripeButton from './connect-stripe-button';
 import { RevealOnMount, StaggeredList } from '@/app/ui/motion/reveal';
+import { disableTwoFactor, enableTwoFactor } from '@/app/lib/actions';
+
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 export const metadata: Metadata = {
   title: 'Settings',
 };
 
 export default async function SettingsPage(props: {
-  searchParams?: Promise<{ success?: string; canceled?: string }>;
+  searchParams?: Promise<{
+    success?: string;
+    canceled?: string;
+    twoFactor?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -33,6 +41,7 @@ export default async function SettingsPage(props: {
   const searchParams = await props.searchParams;
   const success = searchParams?.success === '1';
   const canceled = searchParams?.canceled === '1';
+  const twoFactorStatus = searchParams?.twoFactor;
 
   function formatEtDateTime(value: Date | string | null | undefined) {
     if (!value) return null;
@@ -56,6 +65,14 @@ export default async function SettingsPage(props: {
     maxPerMonth,
   } = await fetchUserPlanAndUsage();
   const companyProfile = await fetchCompanyProfile();
+  const [userSecurity] = await sql<
+    { is_verified: boolean; two_factor_enabled: boolean }[]
+  >`
+    select is_verified, two_factor_enabled
+    from users
+    where lower(email) = ${userEmail}
+    limit 1
+  `;
   const stripeConnectAccountId = await fetchStripeConnectAccountId();
   const connectStatus: StripeConnectStatus =
     await fetchStripeConnectStatus(userEmail);
@@ -128,6 +145,24 @@ export default async function SettingsPage(props: {
         {canceled && (
           <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
             Payment canceled.
+          </div>
+        )}
+
+        {twoFactorStatus === 'enabled' && (
+          <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">
+            Two-factor authentication is enabled.
+          </div>
+        )}
+
+        {twoFactorStatus === 'disabled' && (
+          <div className="mb-4 rounded-xl border border-slate-600/50 bg-slate-800/40 p-4 text-slate-200">
+            Two-factor authentication is disabled.
+          </div>
+        )}
+
+        {twoFactorStatus === 'verify-required' && (
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+            Verify your email before enabling two-factor authentication.
           </div>
         )}
       </RevealOnMount>
@@ -251,6 +286,47 @@ export default async function SettingsPage(props: {
         </div>
 
         <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
+            <h2 className="text-base font-semibold text-slate-100">
+              Two-factor authentication
+            </h2>
+            {!userSecurity?.two_factor_enabled ? (
+              <>
+                <p className="mt-2 text-sm text-slate-300">
+                  When enabled, each login will require a 6-digit code sent to your email.
+                </p>
+                <form action={enableTwoFactor} className="mt-3">
+                  <button
+                    type="submit"
+                    disabled={!userSecurity?.is_verified}
+                    className="rounded-xl border border-slate-700/70 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition duration-200 ease-out hover:bg-slate-800 hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Enable 2FA
+                  </button>
+                </form>
+                {!userSecurity?.is_verified && (
+                  <p className="mt-2 text-xs text-amber-200">
+                    Verify your email first to enable 2FA.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-sm text-slate-300">
+                  2FA is active. You will need an emailed 6-digit code on every login.
+                </p>
+                <form action={disableTwoFactor} className="mt-3">
+                  <button
+                    type="submit"
+                    className="rounded-xl border border-slate-700/70 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition duration-200 ease-out hover:bg-slate-800 hover:scale-[1.01]"
+                  >
+                    Disable 2FA
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+
           {!stripeConnectAccountId && (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-[0_18px_35px_rgba(0,0,0,0.35)]">
               <p className="mb-3 text-sm text-slate-300">

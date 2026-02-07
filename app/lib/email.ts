@@ -78,3 +78,83 @@ export async function sendEmailVerification(options: {
     throw new Error(`Resend failed: ${detail}`);
   }
 }
+
+export async function sendTwoFactorCodeEmail(options: {
+  to: string;
+  code: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('[2fa email stub]', options.to);
+    return;
+  }
+
+  const from = process.env.REMINDER_FROM_EMAIL ?? 'Invoicify <noreply@invoicify.dev>';
+  const subject = 'Your Lateless login code';
+  const bodyHtml = `
+    <p>Use this 6-digit code to finish logging in to Lateless:</p>
+    <p><strong style="font-size:24px;letter-spacing:0.08em;">${options.code}</strong></p>
+  `;
+  const bodyText = `Use this 6-digit code to finish logging in to Lateless:\n\n${options.code}`;
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: options.to,
+      subject,
+      html: bodyHtml,
+      text: bodyText,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Resend failed: ${detail}`);
+  }
+}
+
+export async function sendPasswordResetEmail(options: {
+  to: string;
+  resetUrl: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('[password reset email stub]', options.to);
+    return;
+  }
+
+  const from = process.env.REMINDER_FROM_EMAIL ?? 'Invoicify <noreply@invoicify.dev>';
+  const subject = 'Reset your Lateless password';
+  const bodyHtml = `
+    <p>Click this link to reset your password:</p>
+    <p><a href="${options.resetUrl}">${options.resetUrl}</a></p>
+  `;
+  const bodyText = `Click this link to reset your password:\n\n${options.resetUrl}`;
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: options.to,
+      subject,
+      html: bodyHtml,
+      text: bodyText,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Resend failed: ${detail}`);
+  }
+}

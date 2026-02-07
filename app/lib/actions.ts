@@ -4,20 +4,53 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import postgres from 'postgres';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { signIn, auth } from '@/auth';
-import { AuthError } from 'next-auth';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { getNextInvoiceNumber, upsertCompanyProfile } from '@/app/lib/data';
 import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from '@/app/lib/config';
 import { checkRateLimit } from '@/app/lib/rate-limit';
-import { sendEmailVerification } from '@/app/lib/email';
-import type { LoginState } from '@/app/lib/login-state';
+import {
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  sendTwoFactorCodeEmail,
+} from '@/app/lib/email';
+import { initialLoginState, type LoginState } from '@/app/lib/login-state';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+const PENDING_TWO_FACTOR_USER_ID_COOKIE = 'pending_2fa_user_id';
+const PENDING_TWO_FACTOR_PASSWORD_COOKIE = 'pending_2fa_password';
+
+function getBaseAppUrl() {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.AUTH_URL ||
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000')
+  );
+}
+
+async function clearPendingTwoFactorCookies() {
+  const cookieStore = await cookies();
+  cookieStore.delete(PENDING_TWO_FACTOR_USER_ID_COOKIE);
+  cookieStore.delete(PENDING_TWO_FACTOR_PASSWORD_COOKIE);
+}
+
+async function clearTwoFactorChallenge(userId: string) {
+  await sql`
+    update users
+    set two_factor_code_hash = null,
+        two_factor_expires_at = null,
+        two_factor_attempts = 0
+    where id = ${userId}
+  `;
 }
 
 async function getRecentFailedLoginCount(email: string): Promise<number> {
@@ -773,12 +806,7 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
         where id = ${userId}
       `;
 
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.AUTH_URL ||
-        (process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3000');
+      const baseUrl = getBaseAppUrl();
       const verifyUrl = `${baseUrl}/verify/${verificationToken}`;
 
       await sendEmailVerification({ to: normalizedEmail, verifyUrl });
@@ -794,47 +822,143 @@ export async function authenticate(
   prevState: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
+  void prevState;
   const emailValue = formData.get('email');
-  const email = typeof emailValue === 'string' ? emailValue : '';
-  const normalizedEmail = email ? normalizeEmail(email) : null;
   const passwordValue = formData.get('password');
-  const password = typeof passwordValue === 'string' ? passwordValue : '';
 
-  try {
-    if (normalizedEmail) {
-      const rate = await checkRateLimit(
-        `login:${normalizedEmail}`,
-        5,
-        15 * 60 * 1000,
-      );
-
-      if (!rate.ok) {
-        return {
-          message: 'Too many login attempts. Please wait a few minutes and try again.',
-          needsVerification: false,
-          email: normalizedEmail ?? undefined,
-        };
-      }
-
-      const failedCount = await getRecentFailedLoginCount(normalizedEmail);
-      if (failedCount >= 10) {
-        return {
-          message: 'Too many login attempts. Please try again in 15 minutes.',
-          needsVerification: false,
-          email: normalizedEmail ?? undefined,
-        };
-      }
-    }
-
-    await signIn('credentials', {
-      email,
-      password,
-      redirectTo: formData.get('redirectTo')?.toString() || '/dashboard',
+  const validated = z
+    .object({
+      email: z.string().email({ message: 'Please enter a valid email address.' }),
+      password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
+    })
+    .safeParse({
+      email: typeof emailValue === 'string' ? emailValue : '',
+      password: typeof passwordValue === 'string' ? passwordValue : '',
     });
 
-    if (normalizedEmail) {
-      await recordLoginAttempt(normalizedEmail, true);
+  if (!validated.success) {
+    return {
+      ...initialLoginState,
+      message: 'Wrong email or password.',
+    };
+  }
+
+  const normalizedEmail = normalizeEmail(validated.data.email);
+  const password = validated.data.password;
+  const redirectTo = formData.get('redirectTo')?.toString() || '/dashboard';
+
+  try {
+    const rate = await checkRateLimit(
+      `login:${normalizedEmail}`,
+      5,
+      15 * 60 * 1000,
+    );
+
+    if (!rate.ok) {
+      return {
+        ...initialLoginState,
+        message: 'Too many login attempts. Please wait a few minutes and try again.',
+        emailForVerification: normalizedEmail,
+      };
     }
+
+    const failedCount = await getRecentFailedLoginCount(normalizedEmail);
+    if (failedCount >= 10) {
+      return {
+        ...initialLoginState,
+        message: 'Too many login attempts. Please try again in 15 minutes.',
+        emailForVerification: normalizedEmail,
+      };
+    }
+
+    const [user] = await sql<{
+      id: string;
+      email: string;
+      password: string;
+      is_verified: boolean;
+      two_factor_enabled: boolean;
+    }[]>`
+      select id, email, password, is_verified, two_factor_enabled
+      from users
+      where lower(email) = ${normalizedEmail}
+      limit 1
+    `;
+
+    if (!user) {
+      await recordLoginAttempt(normalizedEmail, false);
+      return {
+        ...initialLoginState,
+        message: 'Wrong email or password.',
+      };
+    }
+
+    const passwordsMatch = await bcrypt.compare(password, user.password);
+    if (!passwordsMatch) {
+      await recordLoginAttempt(normalizedEmail, false);
+      return {
+        ...initialLoginState,
+        message: 'Wrong email or password.',
+      };
+    }
+
+    if (!user.is_verified) {
+      await recordLoginAttempt(normalizedEmail, false);
+      return {
+        ...initialLoginState,
+        message:
+          'Your email is not verified yet. Please check your inbox and click the verification link.',
+        needsVerification: true,
+        emailForVerification: user.email,
+      };
+    }
+
+    if (!user.two_factor_enabled) {
+      await signIn('credentials', {
+        email: user.email,
+        password,
+        redirect: false,
+        redirectTo,
+      });
+
+      await recordLoginAttempt(normalizedEmail, true);
+
+      return { ...initialLoginState, success: true };
+    }
+
+    const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+    const codeHash = await bcrypt.hash(code, 10);
+
+    await sql`
+      update users
+      set two_factor_code_hash = ${codeHash},
+          two_factor_expires_at = now() + interval '10 minutes',
+          two_factor_attempts = 0
+      where id = ${user.id}
+    `;
+
+    await sendTwoFactorCodeEmail({ to: user.email, code });
+
+    const cookieStore = await cookies();
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      maxAge: 15 * 60,
+      path: '/',
+    };
+    cookieStore.set(PENDING_TWO_FACTOR_USER_ID_COOKIE, user.id, cookieOptions);
+    cookieStore.set(
+      PENDING_TWO_FACTOR_PASSWORD_COOKIE,
+      Buffer.from(password, 'utf8').toString('base64url'),
+      cookieOptions,
+    );
+
+    return {
+      ...initialLoginState,
+      message: 'We have sent a 6-digit login code to your email.',
+      needsTwoFactor: true,
+      emailForTwoFactor: user.email,
+    };
   } catch (error) {
     if (
       typeof error === 'object' &&
@@ -845,44 +969,294 @@ export async function authenticate(
     ) {
       throw error;
     }
-    if (error instanceof AuthError) {
-      // @ts-ignore - cause is loosely typed in next-auth
-      const code = error.cause?.code as string | undefined;
-      switch (error.type) {
-        case 'CredentialsSignin':
-          if (normalizedEmail) {
-            await recordLoginAttempt(normalizedEmail, false);
-          }
-          switch (code) {
-            case 'EMAIL_NOT_VERIFIED':
-              return {
-                message: 'User not verified. Please check your email.',
-                needsVerification: true,
-                email: normalizedEmail ?? undefined,
-              };
-            case 'INVALID_CREDENTIALS':
-            default:
-              return {
-                message: 'Wrong email or password.',
-                needsVerification: false,
-                email: normalizedEmail ?? undefined,
-              };
-          }
-        default:
-          return {
-            message: 'Something went wrong. Please try again.',
-            needsVerification: false,
-            email: normalizedEmail ?? undefined,
-          };
-      }
-    }
+    await recordLoginAttempt(normalizedEmail, false);
     console.error('Unexpected login error', error);
     return {
+      ...initialLoginState,
       message: 'Something went wrong. Please try again.',
-      needsVerification: false,
-      email: normalizedEmail ?? undefined,
+    };
+  }
+}
+
+export async function verifyTwoFactorCode(
+  prevState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  void prevState;
+
+  const codeInput = formData.get('code');
+  const code = typeof codeInput === 'string' ? codeInput.trim() : '';
+  const redirectTo = formData.get('redirectTo')?.toString() || '/dashboard';
+
+  if (!/^\d{6}$/.test(code)) {
+    return {
+      ...initialLoginState,
+      needsTwoFactor: true,
+      message: 'Invalid code. Please try again.',
     };
   }
 
-  return { message: null };
+  const cookieStore = await cookies();
+  const pendingUserId = cookieStore.get(PENDING_TWO_FACTOR_USER_ID_COOKIE)?.value;
+  const pendingPasswordEncoded = cookieStore.get(PENDING_TWO_FACTOR_PASSWORD_COOKIE)?.value;
+
+  if (!pendingUserId || !pendingPasswordEncoded) {
+    await clearPendingTwoFactorCookies();
+    return {
+      ...initialLoginState,
+      message: 'Session expired. Please log in again.',
+      needsTwoFactor: false,
+    };
+  }
+
+  const [user] = await sql<{
+    id: string;
+    email: string;
+    two_factor_enabled: boolean;
+    two_factor_code_hash: string | null;
+    two_factor_expires_at: Date | null;
+    two_factor_attempts: number;
+  }[]>`
+    select
+      id,
+      email,
+      two_factor_enabled,
+      two_factor_code_hash,
+      two_factor_expires_at,
+      two_factor_attempts
+    from users
+    where id = ${pendingUserId}
+    limit 1
+  `;
+
+  if (!user || !user.two_factor_enabled || !user.two_factor_code_hash) {
+    if (user?.id) {
+      await clearTwoFactorChallenge(user.id);
+    }
+    await clearPendingTwoFactorCookies();
+    return {
+      ...initialLoginState,
+      message: 'Session expired. Please log in again.',
+      needsTwoFactor: false,
+    };
+  }
+
+  if (
+    !user.two_factor_expires_at ||
+    user.two_factor_expires_at.getTime() < Date.now()
+  ) {
+    await clearTwoFactorChallenge(user.id);
+    await clearPendingTwoFactorCookies();
+    return {
+      ...initialLoginState,
+      message: 'Code expired. Please log in again.',
+      needsTwoFactor: false,
+    };
+  }
+
+  if ((user.two_factor_attempts ?? 0) >= 5) {
+    await clearTwoFactorChallenge(user.id);
+    await clearPendingTwoFactorCookies();
+    return {
+      ...initialLoginState,
+      message: 'Too many attempts. Please log in again.',
+      needsTwoFactor: false,
+    };
+  }
+
+  const codeMatches = await bcrypt.compare(code, user.two_factor_code_hash);
+  if (!codeMatches) {
+    await sql`
+      update users
+      set two_factor_attempts = coalesce(two_factor_attempts, 0) + 1
+      where id = ${user.id}
+    `;
+
+    return {
+      ...initialLoginState,
+      needsTwoFactor: true,
+      emailForTwoFactor: user.email,
+      message: 'Invalid code. Please try again.',
+    };
+  }
+
+  await clearTwoFactorChallenge(user.id);
+  await clearPendingTwoFactorCookies();
+
+  const pendingPassword = Buffer.from(pendingPasswordEncoded, 'base64url').toString(
+    'utf8',
+  );
+
+  try {
+    await signIn('credentials', {
+      email: user.email,
+      password: pendingPassword,
+      redirect: false,
+      redirectTo,
+    });
+    await recordLoginAttempt(normalizeEmail(user.email), true);
+    return { ...initialLoginState, success: true };
+  } catch (error) {
+    console.error('2FA login completion failed', error);
+    return {
+      ...initialLoginState,
+      message: 'Something went wrong. Please try again.',
+      needsTwoFactor: false,
+    };
+  }
+}
+
+export async function enableTwoFactor() {
+  const session = await auth();
+  const email = session?.user?.email;
+  if (!email) {
+    redirect('/login');
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  const [user] = await sql<{ id: string; is_verified: boolean }[]>`
+    select id, is_verified
+    from users
+    where lower(email) = ${normalizedEmail}
+    limit 1
+  `;
+
+  if (!user?.is_verified) {
+    redirect('/dashboard/settings?twoFactor=verify-required');
+  }
+
+  await sql`
+    update users
+    set two_factor_enabled = true
+    where id = ${user.id}
+  `;
+
+  revalidatePath('/dashboard/settings');
+  redirect('/dashboard/settings?twoFactor=enabled');
+}
+
+export async function disableTwoFactor() {
+  const session = await auth();
+  const email = session?.user?.email;
+  if (!email) {
+    redirect('/login');
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  await sql`
+    update users
+    set two_factor_enabled = false,
+        two_factor_code_hash = null,
+        two_factor_expires_at = null,
+        two_factor_attempts = 0
+    where lower(email) = ${normalizedEmail}
+  `;
+
+  revalidatePath('/dashboard/settings');
+  redirect('/dashboard/settings?twoFactor=disabled');
+}
+
+export type PasswordResetRequestState = {
+  message: string | null;
+};
+
+export async function requestPasswordReset(
+  prevState: PasswordResetRequestState,
+  formData: FormData,
+): Promise<PasswordResetRequestState> {
+  void prevState;
+  const emailValue = formData.get('email');
+  const parsed = z
+    .object({ email: z.string().email({ message: 'Please enter a valid email address.' }) })
+    .safeParse({ email: typeof emailValue === 'string' ? emailValue : '' });
+
+  if (!parsed.success) {
+    return { message: parsed.error.flatten().fieldErrors.email?.[0] ?? 'Please enter a valid email address.' };
+  }
+
+  const normalizedEmail = normalizeEmail(parsed.data.email);
+
+  try {
+    const [user] = await sql<{ id: string }[]>`
+      select id
+      from users
+      where lower(email) = ${normalizedEmail}
+      limit 1
+    `;
+
+    if (user) {
+      const token = crypto.randomUUID();
+      await sql`
+        update users
+        set password_reset_token = ${token},
+            password_reset_sent_at = now()
+        where id = ${user.id}
+      `;
+
+      const resetUrl = `${getBaseAppUrl()}/reset-password/${token}`;
+      await sendPasswordResetEmail({ to: normalizedEmail, resetUrl });
+    }
+  } catch (error) {
+    console.error('Password reset request failed', error);
+  }
+
+  return { message: 'If an account exists, we\'ve sent a reset link.' };
+}
+
+export type ResetPasswordState = {
+  message: string | null;
+};
+
+export async function resetPassword(
+  prevState: ResetPasswordState,
+  formData: FormData,
+): Promise<ResetPasswordState> {
+  void prevState;
+  const tokenValue = formData.get('token');
+  const passwordValue = formData.get('password');
+  const confirmPasswordValue = formData.get('confirmPassword');
+
+  const token = typeof tokenValue === 'string' ? tokenValue.trim() : '';
+  const password = typeof passwordValue === 'string' ? passwordValue : '';
+  const confirmPassword =
+    typeof confirmPasswordValue === 'string' ? confirmPasswordValue : '';
+
+  if (!token) {
+    return { message: 'This link is invalid or has expired.' };
+  }
+
+  if (password.length < 6) {
+    return { message: 'Password must be at least 6 characters.' };
+  }
+
+  if (password !== confirmPassword) {
+    return { message: 'Passwords do not match.' };
+  }
+
+  const [user] = await sql<{ id: string }[]>`
+    select id
+    from users
+    where password_reset_token = ${token}
+      and password_reset_sent_at is not null
+      and password_reset_sent_at >= now() - interval '1 hour'
+    limit 1
+  `;
+
+  if (!user) {
+    return { message: 'This link is invalid or has expired.' };
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await sql`
+    update users
+    set password = ${passwordHash},
+        password_reset_token = null,
+        password_reset_sent_at = null,
+        two_factor_code_hash = null,
+        two_factor_expires_at = null,
+        two_factor_attempts = 0
+    where id = ${user.id}
+  `;
+
+  redirect('/login?reset=success');
 }

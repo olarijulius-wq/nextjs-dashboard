@@ -17,6 +17,12 @@ export type User = {
   is_verified?: boolean;
   verification_token?: string | null;
   verification_sent_at?: string | null;
+  two_factor_enabled?: boolean | null;
+  two_factor_code_hash?: string | null;
+  two_factor_expires_at?: string | Date | null;
+  two_factor_attempts?: number | null;
+  password_reset_token?: string | null;
+  password_reset_sent_at?: string | Date | null;
   stripe_connect_account_id?: string | null;
   stripe_connect_payouts_enabled?: boolean;
   stripe_connect_details_submitted?: boolean;

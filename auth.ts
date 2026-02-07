@@ -15,6 +15,46 @@ function normalizeEmail(email: string) {
  
 export const { auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  logger: {
+    error(code, ...message) {
+      const parts = [code, ...message];
+      const payload = parts
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          if (part instanceof Error) {
+            return `${part.name} ${part.message}`;
+          }
+          try {
+            return JSON.stringify(part);
+          } catch {
+            return String(part);
+          }
+        })
+        .join(' ');
+
+      // Invalid credentials / unverified email are handled in app/lib/actions.ts.
+      const hasCredentialsSigninPayload =
+        payload.includes('CredentialsSignin') ||
+        parts.some((part) => {
+          if (!part || typeof part !== 'object') return false;
+          const maybeTyped = part as { type?: unknown; cause?: unknown };
+          const type = maybeTyped.type;
+          if (type === 'CredentialsSignin') return true;
+
+          const cause = maybeTyped.cause as { code?: unknown } | undefined;
+          return (
+            cause?.code === 'INVALID_CREDENTIALS' ||
+            cause?.code === 'EMAIL_NOT_VERIFIED'
+          );
+        });
+
+      if (hasCredentialsSigninPayload) {
+        return;
+      }
+
+      console.error('[auth][error]', code, ...message);
+    },
+  },
   providers: [
     Credentials({
       async authorize(credentials) {
