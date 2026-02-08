@@ -268,7 +268,7 @@ export async function POST(req: Request) {
     if (event.type === "account.updated") {
       try {
         const account = event.data.object as Stripe.Account;
-        const connectAccountId = account.id;
+        const connectAccountId = account.id.trim();
         const payoutsEnabled = !!account.payouts_enabled;
         const detailsSubmitted = !!account.details_submitted;
 
@@ -277,21 +277,28 @@ export async function POST(req: Request) {
           set
             stripe_connect_payouts_enabled = ${payoutsEnabled},
             stripe_connect_details_submitted = ${detailsSubmitted}
-          where stripe_connect_account_id = ${connectAccountId}
+          where lower(trim(stripe_connect_account_id)) = lower(${connectAccountId})
           returning email
         `;
 
         console.log(
-          "[connect webhook] account.updated synced",
-          connectAccountId,
-          payoutsEnabled,
-          detailsSubmitted,
+          "[connect webhook] account.updated user sync",
+          {
+            accountId: connectAccountId,
+            payouts_enabled: account.payouts_enabled,
+            details_submitted: account.details_submitted,
+            matchedUsers: result.length,
+          },
         );
 
         if (result.length === 0) {
           console.warn(
-            "[connect webhook] account.updated no matching user for account",
-            connectAccountId,
+            "[connect webhook] account.updated no matching user row",
+            {
+              accountId: connectAccountId,
+              payouts_enabled: account.payouts_enabled,
+              details_submitted: account.details_submitted,
+            },
           );
         }
       } catch (accountUpdatedError) {

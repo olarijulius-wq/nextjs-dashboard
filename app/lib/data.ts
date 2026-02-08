@@ -104,12 +104,11 @@ export async function fetchStripeConnectStatusForUser(
     `;
 
     const row = data[0];
-    const accountId = row?.stripe_connect_account_id ?? null;
+    const accountId = row?.stripe_connect_account_id?.trim() || null;
     const hasAccount = !!accountId;
     const detailsSubmitted = !!row?.stripe_connect_details_submitted;
     const payoutsEnabled = !!row?.stripe_connect_payouts_enabled;
-    const isReadyForTransfers =
-      hasAccount && detailsSubmitted && payoutsEnabled;
+    const isReadyForTransfers = hasAccount && payoutsEnabled && detailsSubmitted;
 
     return {
       hasAccount,
