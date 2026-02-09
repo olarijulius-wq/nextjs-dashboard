@@ -158,3 +158,54 @@ export async function sendPasswordResetEmail(options: {
     throw new Error(`Resend failed: ${detail}`);
   }
 }
+
+export async function sendWorkspaceInviteEmail(options: {
+  to: string;
+  invitedByEmail: string;
+  workspaceName: string;
+  inviteUrl: string;
+  role: 'admin' | 'member';
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('[team invite email stub]', options.to);
+    return;
+  }
+
+  const from = process.env.REMINDER_FROM_EMAIL ?? 'Invoicify <noreply@invoicify.dev>';
+  const subject = `You were invited to join ${options.workspaceName}`;
+  const bodyHtml = `
+    <p>You were invited to join <strong>${options.workspaceName}</strong> on Lateless.</p>
+    <p>Role: <strong>${options.role}</strong></p>
+    <p>Invited by: ${options.invitedByEmail}</p>
+    <p><a href="${options.inviteUrl}">Accept invite</a></p>
+  `;
+  const bodyText = [
+    `You were invited to join ${options.workspaceName} on Lateless.`,
+    `Role: ${options.role}`,
+    `Invited by: ${options.invitedByEmail}`,
+    '',
+    `Accept invite: ${options.inviteUrl}`,
+  ].join('\n');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: options.to,
+      subject,
+      html: bodyHtml,
+      text: bodyText,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Resend failed: ${detail}`);
+  }
+}
