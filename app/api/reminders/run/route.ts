@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import postgres from 'postgres';
 import { sendInvoiceReminderEmail } from '@/app/lib/email';
 import { generatePayLink } from '@/app/lib/pay-link';
+import {
+  fetchUnsubscribeSettings,
+  isRecipientUnsubscribed,
+  isUnsubscribeMigrationRequiredError,
+  issueUnsubscribeToken,
+} from '@/app/lib/unsubscribe';
 
 export const runtime = 'nodejs';
 
@@ -59,60 +65,52 @@ async function runReminderJob(req: Request) {
     customer_name: string;
     customer_email: string;
     invoice_number: string | null;
+    workspace_id: string | null;
   }[]>`
-    WITH target AS (
-      SELECT
-        invoices.id,
-        invoices.amount,
-        invoices.due_date,
-        invoices.reminder_level,
-        invoices.user_email,
-        invoices.invoice_number,
-        customers.name AS customer_name,
-        customers.email AS customer_email
-      FROM invoices
-      JOIN customers
-        ON customers.id = invoices.customer_id
-      JOIN users
-        ON lower(users.email) = lower(invoices.user_email)
-      WHERE
-        users.plan in ('solo', 'pro', 'studio')
-        AND users.is_verified = true
-        AND users.subscription_status in ('active', 'trialing')
-        AND invoices.status = 'pending'
-        AND invoices.due_date IS NOT NULL
-        AND invoices.due_date < current_date
-        AND invoices.reminder_level < 3
-        AND (
-          (invoices.reminder_level = 0 AND current_date > invoices.due_date)
-          OR (
-            invoices.reminder_level = 1
-            AND invoices.last_reminder_sent_at <= now() - interval '7 days'
-          )
-          OR (
-            invoices.reminder_level = 2
-            AND invoices.last_reminder_sent_at <= now() - interval '14 days'
-          )
-        )
-    )
-    UPDATE invoices
-    SET
-      reminder_level = invoices.reminder_level + 1,
-      last_reminder_sent_at = now()
-    FROM target
-    WHERE invoices.id = target.id
-    RETURNING
+    SELECT
       invoices.id,
       invoices.amount,
       invoices.due_date,
       invoices.reminder_level,
       invoices.user_email,
-      target.customer_name,
-      target.customer_email,
-      invoices.invoice_number
+      invoices.invoice_number,
+      customers.name AS customer_name,
+      customers.email AS customer_email,
+      workspaces.id AS workspace_id
+    FROM invoices
+    JOIN customers
+      ON customers.id = invoices.customer_id
+    JOIN users
+      ON lower(users.email) = lower(invoices.user_email)
+    LEFT JOIN LATERAL (
+      SELECT id
+      FROM workspaces
+      WHERE owner_user_id = users.id
+      ORDER BY created_at ASC
+      LIMIT 1
+    ) workspaces ON true
+    WHERE
+      users.plan in ('solo', 'pro', 'studio')
+      AND users.is_verified = true
+      AND users.subscription_status in ('active', 'trialing')
+      AND invoices.status = 'pending'
+      AND invoices.due_date IS NOT NULL
+      AND invoices.due_date < current_date
+      AND invoices.reminder_level < 3
+      AND (
+        (invoices.reminder_level = 0 AND current_date > invoices.due_date)
+        OR (
+          invoices.reminder_level = 1
+          AND invoices.last_reminder_sent_at <= now() - interval '7 days'
+        )
+        OR (
+          invoices.reminder_level = 2
+          AND invoices.last_reminder_sent_at <= now() - interval '14 days'
+        )
+      )
   `;
 
-  const updatedInvoiceIds = reminders.map((reminder) => reminder.id);
+  const sentInvoiceIds: string[] = [];
 
   if (reminders.length === 0) {
     console.log(
@@ -122,10 +120,46 @@ async function runReminderJob(req: Request) {
 
   for (const reminder of reminders) {
     try {
+      let includeUnsubscribeLink = false;
+      let unsubscribeUrl: string | null = null;
+
+      if (reminder.workspace_id) {
+        try {
+          const unsubscribeSettings = await fetchUnsubscribeSettings(
+            reminder.workspace_id,
+          );
+          if (unsubscribeSettings.enabled) {
+            const alreadyUnsubscribed = await isRecipientUnsubscribed(
+              reminder.workspace_id,
+              reminder.customer_email,
+            );
+
+            if (alreadyUnsubscribed) {
+              continue;
+            }
+
+            const unsubscribePath = await issueUnsubscribeToken(
+              reminder.workspace_id,
+              reminder.customer_email,
+            );
+            unsubscribeUrl = `${baseUrl}${unsubscribePath}`;
+            includeUnsubscribeLink = true;
+          }
+        } catch (unsubscribeError) {
+          if (!isUnsubscribeMigrationRequiredError(unsubscribeError)) {
+            console.error(
+              'Unsubscribe check failed:',
+              reminder.id,
+              unsubscribeError,
+            );
+          }
+        }
+      }
+
       const payLink = generatePayLink(baseUrl, reminder.id);
       const amountLabel = formatAmount(reminder.amount);
       const dueDateLabel = formatDate(reminder.due_date);
-      const reminderNumber = reminder.reminder_level;
+      const reminderNumber = reminder.reminder_level + 1;
       const subject = `Invoice reminder #${reminderNumber}: ${amountLabel} due`;
 
       const bodyText = [
@@ -135,6 +169,9 @@ async function runReminderJob(req: Request) {
         `Amount: ${amountLabel}`,
         `Due date: ${dueDateLabel}`,
         `Pay here: ${payLink}`,
+        ...(includeUnsubscribeLink && unsubscribeUrl
+          ? ['', `Unsubscribe from reminder emails: ${unsubscribeUrl}`]
+          : []),
         '',
         'Thank you,',
         'Lateless',
@@ -148,6 +185,11 @@ async function runReminderJob(req: Request) {
           <li><strong>Due date:</strong> ${dueDateLabel}</li>
         </ul>
         <p><a href="${payLink}">Pay this invoice now</a></p>
+        ${
+          includeUnsubscribeLink && unsubscribeUrl
+            ? `<p style="margin-top:12px;"><a href="${unsubscribeUrl}">Unsubscribe from reminder emails</a></p>`
+            : ''
+        }
         <p>Thank you,<br />Lateless</p>
       `;
 
@@ -157,18 +199,27 @@ async function runReminderJob(req: Request) {
         bodyHtml,
         bodyText,
       });
+
+      await sql`
+        update invoices
+        set reminder_level = reminder_level + 1,
+            last_reminder_sent_at = now()
+        where id = ${reminder.id}
+          and reminder_level = ${reminder.reminder_level}
+      `;
+      sentInvoiceIds.push(reminder.id);
     } catch (error) {
       console.error('Reminder send failed:', reminder.id, error);
     }
   }
 
   const ranAt = new Date().toISOString();
-  console.log(`[reminders] ranAt=${ranAt} updated=${reminders.length}`);
+  console.log(`[reminders] ranAt=${ranAt} sent=${sentInvoiceIds.length}`);
 
   return NextResponse.json({
     ranAt,
-    updatedCount: reminders.length,
-    updatedInvoiceIds,
+    updatedCount: sentInvoiceIds.length,
+    updatedInvoiceIds: sentInvoiceIds,
     dryRun: false,
   });
 }
