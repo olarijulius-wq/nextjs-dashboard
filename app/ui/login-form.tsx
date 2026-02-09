@@ -1,25 +1,28 @@
 'use client';
 
-import { lusitana } from '@/app/ui/fonts';
 import {
   AtSymbolIcon,
   KeyIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { ArrowRightIcon } from '@heroicons/react/20/solid';
-import { Button, secondaryButtonClasses } from '@/app/ui/button';
+import { Button } from '@/app/ui/button';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { authenticate, verifyTwoFactorCode } from '@/app/lib/actions';
 import { initialLoginState } from '@/app/lib/login-state';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import SocialAuthButtons from '@/app/(auth)/_components/social-auth-buttons';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <Button className="mt-4 w-full" aria-disabled={pending}>
+    <Button
+      className="h-11 w-full justify-start border-white bg-white px-4 text-black shadow-[0_10px_28px_rgba(0,0,0,0.35)] hover:bg-white/90"
+      aria-disabled={pending}
+    >
       Log in
       <ArrowRightIcon className="ml-auto h-5 w-5 text-current" />
     </Button>
@@ -107,168 +110,159 @@ export default function LoginForm() {
 
   if (state.needsTwoFactor || twoFactorState.needsTwoFactor) {
     return (
-      <form action={twoFactorFormAction} className="space-y-3">
-        <div className="flex-1 rounded-2xl border border-neutral-200 bg-white px-6 pb-4 pt-8 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-          <h1 className={`${lusitana.className} mb-3 text-2xl`}>
-            Enter your login code.
-          </h1>
-          <p className="mb-4 text-sm text-neutral-700 dark:text-slate-300">
-            We sent a 6-digit code to{' '}
-            <span className="font-medium text-neutral-900 dark:text-slate-100">
-              {activeTwoFactorState.emailForTwoFactor || email}
-            </span>
-            .
-          </p>
+      <form action={twoFactorFormAction} className="space-y-5">
+        <p className="text-sm text-white/70">
+          We sent a 6-digit code to{' '}
+          <span className="font-medium text-white">
+            {activeTwoFactorState.emailForTwoFactor || email}
+          </span>
+          .
+        </p>
 
-          <label
-            className="mb-3 block text-xs font-medium text-slate-200"
-            htmlFor="twoFactorCode"
+        <label
+          className="block text-xs font-medium text-white/80"
+          htmlFor="twoFactorCode"
+        >
+          6-digit code
+        </label>
+        <input
+          id="twoFactorCode"
+          name="code"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]{6}"
+          autoComplete="one-time-code"
+          maxLength={6}
+          required
+          className="block w-full rounded-xl border border-white/[0.12] bg-white/[0.06] py-3 text-center text-lg tracking-[0.24em] tabular-nums text-white outline-none placeholder:text-white/35 transition focus:border-white/20 focus:ring-2 focus:ring-white/20"
+          placeholder="000000"
+        />
+
+        {activeTwoFactorState.message && (
+          <p
+            className={
+              twoFactorInfoMessage
+                ? 'rounded-lg border border-white/[0.12] bg-white/[0.06] px-3 py-2 text-sm text-white/70'
+                : 'text-sm text-red-400'
+            }
+            aria-live="polite"
           >
-            6-digit code
-          </label>
-          <input
-            id="twoFactorCode"
-            name="code"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]{6}"
-            autoComplete="one-time-code"
-            maxLength={6}
-            required
-            className="block w-full rounded-xl border border-neutral-300 bg-white py-3 text-center text-lg tracking-[0.24em] tabular-nums text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
-            placeholder="000000"
-          />
+            {activeTwoFactorState.message}
+          </p>
+        )}
 
-          {activeTwoFactorState.message && (
-            <p
-              className={
-                twoFactorInfoMessage
-                  ? 'mt-3 rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-neutral-700 dark:border-slate-700/70 dark:bg-slate-800/60 dark:text-slate-200'
-                  : 'mt-3 text-sm text-red-500'
-              }
-              aria-live="polite"
-            >
-              {activeTwoFactorState.message}
-            </p>
-          )}
+        <input type="hidden" name="redirectTo" defaultValue={callbackUrl} />
 
-          <input type="hidden" name="redirectTo" defaultValue={callbackUrl} />
+        <Button className="h-11 w-full border-white bg-white text-black shadow-[0_10px_28px_rgba(0,0,0,0.35)] hover:bg-white/90" type="submit">
+          Verify code
+          <ArrowRightIcon className="ml-auto h-5 w-5 text-current" />
+        </Button>
 
-          <Button className="mt-4 w-full" type="submit">
-            Verify code
-          </Button>
-
-          <div className="mt-3 text-center">
-            <Link href="/login" className="text-xs text-neutral-700 hover:text-neutral-900 dark:text-slate-300 dark:hover:text-slate-100">
-              Start over
-            </Link>
-          </div>
+        <div className="text-center">
+          <Link href="/login" className="text-xs text-white/60 hover:text-white">
+            Start over
+          </Link>
         </div>
       </form>
     );
   }
 
   return (
-    <form action={formAction} className="space-y-3" onSubmit={handleSubmit}>
-      <div className="flex-1 rounded-2xl border border-neutral-200 bg-white px-6 pb-4 pt-8 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-
-        <h1 className={`${lusitana.className} mb-3 text-2xl`}>
-          Please log in to continue.
-        </h1>
-        {state.message && (
-          <div className="mb-4 flex items-start space-x-2" aria-live="polite" aria-atomic="true">
-            <ExclamationCircleIcon className="mt-0.5 h-5 w-5 text-red-500" />
-            <p className="text-sm text-red-500">{state.message}</p>
-          </div>
-        )}
-
-        <div className="w-full">
-          {/* EMAIL */}
-          <div>
-            <label
-              className="mb-3 mt-5 block text-xs font-medium text-neutral-700 dark:text-slate-200"
-              htmlFor="email"
-            >
-              Email
-            </label>
-            <div className="relative">
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                placeholder="Enter your email address"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="peer block w-full rounded-xl border border-neutral-300 bg-white py-[9px] pl-10 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
-              />
-              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-700 dark:text-slate-500 dark:peer-focus:text-slate-300" />
-            </div>
-          </div>
-
-          {/* PASSWORD */}
-          <div className="mt-4">
-            <label
-              className="mb-3 mt-5 block text-xs font-medium text-neutral-700 dark:text-slate-200"
-              htmlFor="password"
-            >
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                minLength={6}
-                placeholder="Enter password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="peer block w-full rounded-xl border border-neutral-300 bg-white py-[9px] pl-10 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
-              />
-              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-700 dark:text-slate-500 dark:peer-focus:text-slate-300" />
-            </div>
-            <div className="mt-2 text-right">
-              <Link
-                href="/forgot-password"
-                className="text-xs text-neutral-700 hover:text-neutral-900 dark:text-slate-300 dark:hover:text-slate-100"
-              >
-                Forgot password?
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* REDIRECT TARGET */}
-        <input
-          type="hidden"
-          name="redirectTo"
-          defaultValue={callbackUrl}
-        />
-
-        {/* SUBMIT */}
-        <SubmitButton />
-
-        {state.needsVerification && (
-          <div className="mt-2 space-y-1 text-sm">
-            <button
-              type="button"
-              onClick={handleResend}
-              className={`${secondaryButtonClasses} rounded-md px-3 py-1 text-xs`}
-            >
-              Send verification email
-            </button>
-            {resent && (
-              <p className="text-xs text-slate-400">
-                Verification email sent. Check your inbox and spam folder.
-              </p>
-            )}
-            {resendError && (
-              <p className="text-xs text-red-400">{resendError}</p>
-            )}
-          </div>
-        )}
+    <form action={formAction} className="space-y-5" onSubmit={handleSubmit}>
+      <SocialAuthButtons />
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-white/10" />
+        <span className="text-xs uppercase tracking-[0.16em] text-white/50">
+          or
+        </span>
+        <span className="h-px flex-1 bg-white/10" />
       </div>
+
+      {state.message && (
+        <div
+          className="flex items-start space-x-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <ExclamationCircleIcon className="mt-0.5 h-5 w-5 text-red-400" />
+          <p className="text-sm text-red-300">{state.message}</p>
+        </div>
+      )}
+
+      <div>
+        <label
+          className="mb-2 block text-xs font-medium text-white/80"
+          htmlFor="email"
+        >
+          Email
+        </label>
+        <div className="relative">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="peer block w-full rounded-xl border border-white/[0.12] bg-white/[0.06] py-[11px] pl-10 text-sm text-white outline-none placeholder:text-white/35 transition focus:border-white/20 focus:ring-2 focus:ring-white/20"
+          />
+          <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/40 transition peer-focus:text-white/70" />
+        </div>
+      </div>
+
+      <div>
+        <label
+          className="mb-2 block text-xs font-medium text-white/80"
+          htmlFor="password"
+        >
+          Password
+        </label>
+        <div className="relative">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            minLength={6}
+            placeholder="Enter your password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="peer block w-full rounded-xl border border-white/[0.12] bg-white/[0.06] py-[11px] pl-10 text-sm text-white outline-none placeholder:text-white/35 transition focus:border-white/20 focus:ring-2 focus:ring-white/20"
+          />
+          <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/40 transition peer-focus:text-white/70" />
+        </div>
+        <div className="mt-2 text-right">
+          <Link
+            href="/forgot-password"
+            className="text-xs text-white/60 hover:text-white"
+          >
+            Forgot password?
+          </Link>
+        </div>
+      </div>
+
+      <input type="hidden" name="redirectTo" defaultValue={callbackUrl} />
+
+      <SubmitButton />
+
+      {state.needsVerification && (
+        <div className="space-y-1 text-sm">
+          <button
+            type="button"
+            onClick={handleResend}
+            className="rounded-lg border border-white/[0.12] bg-white/[0.06] px-3 py-1.5 text-xs text-white/80 transition hover:border-white/20 hover:text-white"
+          >
+            Send verification email
+          </button>
+          {resent && (
+            <p className="text-xs text-white/70">
+              Verification email sent. Check your inbox and spam folder.
+            </p>
+          )}
+          {resendError && <p className="text-xs text-red-400">{resendError}</p>}
+        </div>
+      )}
     </form>
   );
 }

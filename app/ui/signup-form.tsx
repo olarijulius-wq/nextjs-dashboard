@@ -1,21 +1,20 @@
 'use client';
 
-import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
+import { ArrowRightIcon } from '@heroicons/react/20/solid';
 import { Button } from '@/app/ui/button';
 import { registerUser, SignupState } from '@/app/lib/actions';
+import SocialAuthButtons from '@/app/(auth)/_components/social-auth-buttons';
 
 export default function SignupForm() {
   const initialState: SignupState = { message: null, errors: {} };
   const [state, formAction] = useActionState(registerUser, initialState);
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitCount, setSubmitCount] = useState(0);
   const lastClearedSubmit = useRef(0);
   const hasError = Boolean(
     state.message ||
-      state.errors?.name?.length ||
       state.errors?.email?.length ||
       state.errors?.password?.length,
   );
@@ -33,72 +32,57 @@ export default function SignupForm() {
   };
 
   return (
-    <form action={formAction} className="space-y-4" onSubmit={handleSubmit}>
-      <div>
-        <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-slate-200">
-          Name
-        </label>
-        <input
-          name="name"
-          type="text"
-          className="block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
-          placeholder="Your name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        {state.errors?.name?.map((e) => (
-          <p key={e} className="mt-2 text-sm text-red-500">{e}</p>
-        ))}
+    <form action={formAction} className="space-y-5" onSubmit={handleSubmit}>
+      <SocialAuthButtons />
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-white/10" />
+        <span className="text-xs uppercase tracking-[0.16em] text-white/50">
+          or
+        </span>
+        <span className="h-px flex-1 bg-white/10" />
       </div>
 
+      <input type="hidden" name="name" value="Lateless User" />
+
       <div>
-        <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-slate-200">
-          Email
-        </label>
+        <label className="mb-2 block text-sm font-medium text-white/80">Email</label>
         <input
           name="email"
           type="email"
-          className="block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
+          className="block w-full rounded-xl border border-white/[0.12] bg-white/[0.06] px-3 py-[11px] text-sm text-white outline-none placeholder:text-white/35 transition focus:border-white/20 focus:ring-2 focus:ring-white/20"
           placeholder="you@example.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
         {state.errors?.email?.map((e) => (
-          <p key={e} className="mt-2 text-sm text-red-500">{e}</p>
+          <p key={e} className="mt-2 text-sm text-red-400">{e}</p>
         ))}
       </div>
 
       <div>
-        <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-slate-200">
-          Password
-        </label>
+        <label className="mb-2 block text-sm font-medium text-white/80">Password</label>
         <input
           name="password"
           type="password"
-          className="block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 transition focus:border-neutral-500 focus:ring-2 focus:ring-neutral-500/50 dark:border-neutral-700 dark:bg-black dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:ring-slate-600/50"
-          placeholder="At least 8 characters"
+          className="block w-full rounded-xl border border-white/[0.12] bg-white/[0.06] px-3 py-[11px] text-sm text-white outline-none placeholder:text-white/35 transition focus:border-white/20 focus:ring-2 focus:ring-white/20"
+          placeholder="At least 6 characters"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
         {state.errors?.password?.map((e) => (
-          <p key={e} className="mt-2 text-sm text-red-500">{e}</p>
+          <p key={e} className="mt-2 text-sm text-red-400">{e}</p>
         ))}
       </div>
 
-      {state.message && (
-        <p className="text-sm text-red-500">{state.message}</p>
-      )}
+      {state.message && <p className="text-sm text-red-400">{state.message}</p>}
 
-      <Button type="submit" className="w-full">
+      <Button
+        type="submit"
+        className="h-11 w-full justify-start border-white bg-white px-4 text-black shadow-[0_10px_28px_rgba(0,0,0,0.35)] hover:bg-white/90"
+      >
         Create account
+        <ArrowRightIcon className="ml-auto h-5 w-5 text-current" />
       </Button>
-
-      <p className="text-center text-sm text-neutral-600 dark:text-slate-400">
-        Already have an account?{' '}
-        <Link href="/login" className="text-neutral-900 hover:text-neutral-700 dark:text-slate-200 dark:hover:text-slate-300">
-          Log in
-        </Link>
-      </p>
     </form>
   );
 }

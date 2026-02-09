@@ -1,0 +1,53 @@
+.authBg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.authBg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/auth-bg.png');
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center center;
+  transform: scale(1.02);
+}
+
+.authBg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(
+      900px 700px at 0% 50%,
+      rgba(255, 255, 255, 0.06),
+      transparent 65%
+    ),
+    radial-gradient(
+      900px 700px at 100% 50%,
+      rgba(255, 255, 255, 0.06),
+      transparent 65%
+    ),
+    radial-gradient(
+      700px 520px at 50% 45%,
+      rgba(0, 0, 0, 0.78) 0%,
+      rgba(0, 0, 0, 0.55) 35%,
+      rgba(0, 0, 0, 0.25) 60%,
+      rgba(0, 0, 0, 0.12) 75%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      1200px 900px at 50% 50%,
+      rgba(0, 0, 0, 0) 55%,
+      rgba(0, 0, 0, 0.55) 92%,
+      rgba(0, 0, 0, 0.72) 100%
+    );
+}
+
+@media (max-width: 768px) {
+  .authBg::before {
+    background-position: center 60%;
+  }
+}
