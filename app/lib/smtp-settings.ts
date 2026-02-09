@@ -355,13 +355,17 @@ async function sendWithSmtp(
     },
   };
   const transporter = nodemailer.createTransport(transportOptions);
-
-  const fromEmail = settings.from_email;
-  const fromName = settings.from_name?.trim();
-  const from = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
+  const fallbackEmail = (
+    settings.from_email ??
+    settings.smtp_username ??
+    to
+  ).trim();
+  const fromHeader = settings.from_name?.trim()
+    ? `${settings.from_name.trim()} <${fallbackEmail}>`
+    : fallbackEmail;
 
   await transporter.sendMail({
-    from,
+    from: fromHeader,
     to,
     replyTo: settings.reply_to ?? undefined,
     subject,
@@ -396,8 +400,7 @@ export async function sendWorkspaceTestEmail(input: {
     !settings.smtp_host ||
     !settings.smtp_port ||
     !settings.smtp_username ||
-    !settings.smtp_password ||
-    !settings.from_email
+    !settings.smtp_password
   ) {
     throw new Error('SMTP settings are incomplete. Save valid SMTP settings first.');
   }

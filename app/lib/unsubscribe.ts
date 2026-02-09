@@ -145,17 +145,12 @@ export async function consumeUnsubscribeToken(token: string) {
   }
 
   return sql.begin(async (tx) => {
-    const [consumed] = await tx<{
-      workspace_id: string;
-      workspace_name: string;
-      email: string;
-      normalized_email: string;
-      page_text: string | null;
-    }[]>`
+    const rows = (await tx.unsafe(
+      `
       with used as (
         update public.workspace_unsubscribe_tokens
         set used_at = now()
-        where token = ${tokenValue}
+        where token = $1
           and used_at is null
           and expires_at > now()
         returning workspace_id, email, normalized_email
@@ -171,13 +166,23 @@ export async function consumeUnsubscribeToken(token: string) {
       left join public.workspace_unsubscribe_settings s
         on s.workspace_id = used.workspace_id
       limit 1
-    `;
+      `,
+      [tokenValue],
+    )) as {
+      workspace_id: string;
+      workspace_name: string;
+      email: string;
+      normalized_email: string;
+      page_text: string | null;
+    }[];
+    const [consumed] = rows;
 
     if (!consumed) {
       return { ok: false as const };
     }
 
-    await tx`
+    await tx.unsafe(
+      `
       insert into public.workspace_unsubscribes (
         workspace_id,
         email,
@@ -186,9 +191,9 @@ export async function consumeUnsubscribeToken(token: string) {
         source
       )
       values (
-        ${consumed.workspace_id},
-        ${consumed.email},
-        ${consumed.normalized_email},
+        $1,
+        $2,
+        $3,
         now(),
         'public_link'
       )
@@ -197,7 +202,9 @@ export async function consumeUnsubscribeToken(token: string) {
         email = excluded.email,
         unsubscribed_at = now(),
         source = excluded.source
-    `;
+      `,
+      [consumed.workspace_id, consumed.email, consumed.normalized_email],
+    );
 
     return {
       ok: true as const,
