@@ -3,12 +3,20 @@
 import { useSyncExternalStore } from 'react';
 import { MoonIcon, SunIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '@/app/ui/theme/theme-provider';
+import clsx from 'clsx';
 
 type ThemeToggleMenuItemProps = {
   staticLabel?: string;
+  className?: string;
 };
 
-export default function ThemeToggleMenuItem({ staticLabel }: ThemeToggleMenuItemProps = {}) {
+const baseClassName =
+  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-900 dark:hover:text-neutral-100';
+
+export default function ThemeToggleMenuItem({
+  staticLabel,
+  className,
+}: ThemeToggleMenuItemProps = {}) {
   const { theme, toggleTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -20,7 +28,7 @@ export default function ThemeToggleMenuItem({ staticLabel }: ThemeToggleMenuItem
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-900 dark:hover:text-neutral-100"
+        className={clsx(baseClassName, className)}
       >
         <MoonIcon className="h-4 w-4" />
         {staticLabel ?? 'Toggle theme'}
@@ -34,7 +42,7 @@ export default function ThemeToggleMenuItem({ staticLabel }: ThemeToggleMenuItem
     <button
       type="button"
       onClick={toggleTheme}
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-900 dark:hover:text-neutral-100"
+      className={clsx(baseClassName, className)}
     >
       {isDark ? <MoonIcon className="h-4 w-4" /> : <SunIcon className="h-4 w-4" />}
       {staticLabel ?? (isDark ? 'Light theme' : 'Dark theme')}
