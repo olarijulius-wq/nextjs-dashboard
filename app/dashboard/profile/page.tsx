@@ -3,7 +3,11 @@ import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import postgres from 'postgres';
 import { disableTwoFactor, enableTwoFactor } from '@/app/lib/actions';
-import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
+import { primaryButtonClasses } from '@/app/ui/button';
+import {
+  ChangePasswordForm,
+  DeleteAccountForm,
+} from './profile-security-panel';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -95,13 +99,7 @@ export default async function ProfilePage(props: {
         <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
           Email &amp; password login is enabled for <strong>{userEmail}</strong>.
         </p>
-        <button
-          type="button"
-          disabled
-          className={`${secondaryButtonClasses} mt-4 cursor-not-allowed border-slate-500 bg-slate-500 text-slate-100 opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400`}
-        >
-          Change password (coming soon)
-        </button>
+        <ChangePasswordForm />
       </section>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
@@ -152,15 +150,12 @@ export default async function ProfilePage(props: {
           Delete account
         </h2>
         <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-          Account deletion will be available later.
+          This permanently deletes your account and its data in Lateless.
         </p>
-        <button
-          type="button"
-          disabled
-          className="mt-4 inline-flex cursor-not-allowed items-center rounded-xl border border-rose-300/50 bg-rose-100/60 px-3 py-2 text-sm font-medium text-rose-500 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300/80"
-        >
-          Delete account (coming soon)
-        </button>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Type <code>DELETE</code> and enter your current password.
+        </p>
+        <DeleteAccountForm />
       </section>
     </div>
   );

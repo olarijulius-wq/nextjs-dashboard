@@ -129,7 +129,7 @@ export default function SocialAuthButtons() {
               {item.icon}
             </span>
             <span className="truncate">
-              {item.available ? item.label : `${item.label} · Coming soon`}
+              {item.available ? item.label : `${item.label} · Not configured`}
             </span>
           </button>
         ))}

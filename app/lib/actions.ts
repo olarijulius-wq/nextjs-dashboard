@@ -874,7 +874,7 @@ export async function authenticate(
     const [user] = await sql<{
       id: string;
       email: string;
-      password: string;
+      password: string | null;
       is_verified: boolean;
       two_factor_enabled: boolean;
     }[]>`
@@ -885,6 +885,14 @@ export async function authenticate(
     `;
 
     if (!user) {
+      await recordLoginAttempt(normalizedEmail, false);
+      return {
+        ...initialLoginState,
+        message: 'Wrong email or password.',
+      };
+    }
+
+    if (!user.password) {
       await recordLoginAttempt(normalizedEmail, false);
       return {
         ...initialLoginState,
