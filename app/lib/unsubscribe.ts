@@ -37,21 +37,29 @@ export function isUnsubscribeMigrationRequiredError(error: unknown): boolean {
   );
 }
 
-export async function assertUnsubscribeSchemaReady(): Promise<void> {
-  const [result] = await sql<{
-    settings: string | null;
-    unsubscribes: string | null;
-    tokens: string | null;
-  }[]>`
-    select
-      to_regclass('public.workspace_unsubscribe_settings') as settings,
-      to_regclass('public.workspace_unsubscribes') as unsubscribes,
-      to_regclass('public.workspace_unsubscribe_tokens') as tokens
-  `;
+let unsubscribeSchemaReadyPromise: Promise<void> | null = null;
 
-  if (!result?.settings || !result?.unsubscribes || !result?.tokens) {
-    throw buildUnsubscribeMigrationRequiredError();
+export async function assertUnsubscribeSchemaReady(): Promise<void> {
+  if (!unsubscribeSchemaReadyPromise) {
+    unsubscribeSchemaReadyPromise = (async () => {
+      const [result] = await sql<{
+        settings: string | null;
+        unsubscribes: string | null;
+        tokens: string | null;
+      }[]>`
+        select
+          to_regclass('public.workspace_unsubscribe_settings') as settings,
+          to_regclass('public.workspace_unsubscribes') as unsubscribes,
+          to_regclass('public.workspace_unsubscribe_tokens') as tokens
+      `;
+
+      if (!result?.settings || !result?.unsubscribes || !result?.tokens) {
+        throw buildUnsubscribeMigrationRequiredError();
+      }
+    })();
   }
+
+  return unsubscribeSchemaReadyPromise;
 }
 
 export async function fetchUnsubscribeSettings(

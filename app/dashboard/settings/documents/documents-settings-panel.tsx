@@ -1,7 +1,8 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, secondaryButtonClasses } from '@/app/ui/button';
 import {
   SETTINGS_INPUT_CLASSES,
@@ -19,15 +20,6 @@ type DocumentSettings = {
   logoDataUrl: string | null;
 };
 
-type SettingsResponse = {
-  ok: boolean;
-  settings?: DocumentSettings;
-  userRole?: UserRole;
-  canEdit?: boolean;
-  code?: string;
-  message?: string;
-};
-
 const defaultSettings: DocumentSettings = {
   invoicePrefix: 'INV',
   nextInvoiceNumber: 1,
@@ -36,57 +28,25 @@ const defaultSettings: DocumentSettings = {
   logoDataUrl: null,
 };
 
-export default function DocumentsSettingsPanel() {
-  const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<DocumentSettings>(defaultSettings);
-  const [userRole, setUserRole] = useState<UserRole>('member');
-  const [canEdit, setCanEdit] = useState(false);
-  const [migrationWarning, setMigrationWarning] = useState<string | null>(null);
+type DocumentsSettingsPanelProps = {
+  initialSettings?: DocumentSettings;
+  userRole?: UserRole;
+  canEdit?: boolean;
+  migrationWarning?: string | null;
+};
+
+export default function DocumentsSettingsPanel({
+  initialSettings,
+  userRole = 'member',
+  canEdit = false,
+  migrationWarning = null,
+}: DocumentsSettingsPanelProps) {
+  const router = useRouter();
+  const [settings, setSettings] = useState<DocumentSettings>(
+    initialSettings ?? defaultSettings,
+  );
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  async function loadSettings() {
-    const response = await fetch('/api/settings/documents', { cache: 'no-store' });
-    const payload = (await response.json().catch(() => null)) as
-      | SettingsResponse
-      | null;
-
-    if (!response.ok || !payload?.ok || !payload.settings || !payload.userRole) {
-      if (payload?.code === 'DOCUMENTS_MIGRATION_REQUIRED') {
-        setMigrationWarning(payload.message ?? 'Run migration 010_add_documents_settings.sql and retry.');
-      } else {
-        setMessage({
-          ok: false,
-          text: payload?.message ?? 'Failed to load document settings.',
-        });
-      }
-      setLoading(false);
-      return;
-    }
-
-    setSettings(payload.settings);
-    setUserRole(payload.userRole);
-    setCanEdit(Boolean(payload.canEdit));
-    setMigrationWarning(null);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    let active = true;
-
-    async function run() {
-      setLoading(true);
-      setMessage(null);
-      if (!active) return;
-      await loadSettings();
-    }
-
-    run();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   async function onSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,6 +79,7 @@ export default function DocumentsSettingsPanel() {
 
       setSettings(payload.settings);
       setMessage({ ok: true, text: 'Document settings saved.' });
+      router.refresh();
     });
   }
 
@@ -170,7 +131,8 @@ export default function DocumentsSettingsPanel() {
         }
 
         setMessage({ ok: true, text: 'Logo uploaded.' });
-        await loadSettings();
+        setSettings((previous) => ({ ...previous, logoDataUrl: dataUrl }));
+        router.refresh();
       });
     };
     reader.readAsDataURL(file);
@@ -198,23 +160,13 @@ export default function DocumentsSettingsPanel() {
       }
 
       setMessage({ ok: true, text: 'Logo removed.' });
-      await loadSettings();
+      setSettings((previous) => ({ ...previous, logoDataUrl: null }));
+      router.refresh();
     });
   }
 
   function onDownloadSamplePdf() {
     window.location.href = '/api/settings/documents/sample-pdf';
-  }
-
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Documents
-        </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
-      </div>
-    );
   }
 
   if (migrationWarning) {
@@ -226,6 +178,19 @@ export default function DocumentsSettingsPanel() {
         <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">{migrationWarning}</p>
         <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">
           Required file: <code>010_add_documents_settings.sql</code>
+        </p>
+      </div>
+    );
+  }
+
+  if (!initialSettings) {
+    return (
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+          Documents
+        </h2>
+        <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+          Failed to load document settings.
         </p>
       </div>
     );

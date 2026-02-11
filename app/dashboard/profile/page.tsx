@@ -5,8 +5,8 @@ import postgres from 'postgres';
 import { disableTwoFactor, enableTwoFactor } from '@/app/lib/actions';
 import { primaryButtonClasses } from '@/app/ui/button';
 import {
-  ChangePasswordForm,
   DeleteAccountForm,
+  EmailPasswordPanel,
 } from './profile-security-panel';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -33,19 +33,35 @@ export default async function ProfilePage(props: {
 
   const [user] = await sql<
     {
-      name: string | null;
       email: string;
       is_verified: boolean | null;
       two_factor_enabled: boolean | null;
     }[]
   >`
-    SELECT name, email, is_verified, two_factor_enabled
+    SELECT email, is_verified, two_factor_enabled
     FROM users
     WHERE lower(email) = ${userEmail}
     LIMIT 1
   `;
 
-  const displayName = user?.name?.trim() || 'No display name set';
+  let connectedOnLabel = 'your account';
+  try {
+    const [createdAtRecord] = await sql<{ created_at: Date | null }[]>`
+      SELECT created_at
+      FROM users
+      WHERE lower(email) = ${userEmail}
+      LIMIT 1
+    `;
+    if (createdAtRecord?.created_at) {
+      connectedOnLabel = new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(createdAtRecord.created_at);
+    }
+  } catch {
+    connectedOnLabel = 'your account';
+  }
 
   return (
     <div className="w-full max-w-3xl space-y-5">
@@ -78,28 +94,23 @@ export default async function ProfilePage(props: {
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-          Profile / Identity
+          Your email
         </h2>
-        <dl className="mt-4 space-y-3 text-sm">
-          <div>
-            <dt className="text-slate-500 dark:text-slate-500">Name</dt>
-            <dd className="text-slate-800 dark:text-slate-200">{displayName}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500 dark:text-slate-500">Email</dt>
-            <dd className="text-slate-800 dark:text-slate-200">{userEmail}</dd>
-          </div>
-        </dl>
+        <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+          {userEmail}
+        </p>
       </section>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-          Authentication
+          Password
         </h2>
-        <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-          Email &amp; password login is enabled for <strong>{userEmail}</strong>.
-        </p>
-        <ChangePasswordForm />
+        <div className="mt-3">
+          <EmailPasswordPanel
+            email={userEmail}
+            connectedOnLabel={connectedOnLabel}
+          />
+        </div>
       </section>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">

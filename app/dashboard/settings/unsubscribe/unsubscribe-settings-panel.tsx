@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, secondaryButtonClasses } from '@/app/ui/button';
 import type {
   UnsubscribedRecipient,
@@ -13,14 +14,13 @@ import {
 
 type UserRole = 'owner' | 'admin' | 'member';
 
-type SettingsApiResponse = {
-  ok: boolean;
-  settings?: WorkspaceUnsubscribeSettings;
+type UnsubscribeSettingsPanelProps = {
+  initialSettings?: WorkspaceUnsubscribeSettings;
+  initialRecipients?: UnsubscribedRecipient[];
   userRole?: UserRole;
   canEditSettings?: boolean;
   canManageRecipients?: boolean;
-  code?: string;
-  message?: string;
+  migrationWarning?: string | null;
 };
 
 function formatDate(value: string) {
@@ -30,109 +30,21 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export default function UnsubscribeSettingsPanel() {
-  const [loading, setLoading] = useState(true);
-  const [migrationWarning, setMigrationWarning] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<UserRole>('member');
-  const [canEditSettings, setCanEditSettings] = useState(false);
-  const [canManageRecipients, setCanManageRecipients] = useState(false);
+export default function UnsubscribeSettingsPanel({
+  initialSettings,
+  initialRecipients = [],
+  userRole = 'member',
+  canEditSettings = false,
+  canManageRecipients = false,
+  migrationWarning = null,
+}: UnsubscribeSettingsPanelProps) {
+  const router = useRouter();
 
-  const [enabled, setEnabled] = useState(true);
-  const [pageText, setPageText] = useState('');
-  const [recipients, setRecipients] = useState<UnsubscribedRecipient[]>([]);
+  const [enabled, setEnabled] = useState(initialSettings?.enabled ?? true);
+  const [pageText, setPageText] = useState(initialSettings?.pageText ?? '');
+  const [recipients, setRecipients] = useState<UnsubscribedRecipient[]>(initialRecipients);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  async function loadRecipients() {
-    if (!canManageRecipients) {
-      setRecipients([]);
-      return;
-    }
-
-    const listResponse = await fetch('/api/settings/unsubscribe/list', {
-      cache: 'no-store',
-    });
-    const listPayload = (await listResponse.json().catch(() => null)) as
-      | { ok?: boolean; recipients?: UnsubscribedRecipient[]; message?: string }
-      | null;
-
-    if (listResponse.ok && listPayload?.ok && listPayload.recipients) {
-      setRecipients(listPayload.recipients);
-      return;
-    }
-
-    setMessage({
-      ok: false,
-      text: listPayload?.message ?? 'Failed to load unsubscribed recipients.',
-    });
-  }
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      setLoading(true);
-      setMessage(null);
-      setMigrationWarning(null);
-
-      const response = await fetch('/api/settings/unsubscribe', { cache: 'no-store' });
-      const payload = (await response.json().catch(() => null)) as
-        | SettingsApiResponse
-        | null;
-
-      if (!active) return;
-
-      if (!response.ok || !payload?.ok || !payload.settings || !payload.userRole) {
-        if (payload?.code === 'UNSUBSCRIBE_MIGRATION_REQUIRED') {
-          setMigrationWarning(
-            payload.message ??
-              'Run migration 009_add_unsubscribe.sql and retry.',
-          );
-        } else {
-          setMessage({
-            ok: false,
-            text: payload?.message ?? 'Failed to load unsubscribe settings.',
-          });
-        }
-        setLoading(false);
-        return;
-      }
-
-      setEnabled(payload.settings.enabled);
-      setPageText(payload.settings.pageText);
-      setUserRole(payload.userRole);
-      setCanEditSettings(Boolean(payload.canEditSettings));
-      const canManage = Boolean(payload.canManageRecipients);
-      setCanManageRecipients(canManage);
-      setLoading(false);
-
-      if (canManage) {
-        const listResponse = await fetch('/api/settings/unsubscribe/list', {
-          cache: 'no-store',
-        });
-        const listPayload = (await listResponse.json().catch(() => null)) as
-          | { ok?: boolean; recipients?: UnsubscribedRecipient[]; message?: string }
-          | null;
-
-        if (!active) return;
-
-        if (listResponse.ok && listPayload?.ok && listPayload.recipients) {
-          setRecipients(listPayload.recipients);
-        } else {
-          setMessage({
-            ok: false,
-            text: listPayload?.message ?? 'Failed to load unsubscribed recipients.',
-          });
-        }
-      }
-    }
-
-    load();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   async function onSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -161,6 +73,7 @@ export default function UnsubscribeSettingsPanel() {
       setEnabled(payload.settings.enabled);
       setPageText(payload.settings.pageText);
       setMessage({ ok: true, text: 'Unsubscribe settings saved.' });
+      router.refresh();
     });
   }
 
@@ -187,19 +100,13 @@ export default function UnsubscribeSettingsPanel() {
       }
 
       setMessage({ ok: true, text: `${email} has been resubscribed.` });
-      await loadRecipients();
+      setRecipients((current) =>
+        current.filter(
+          (recipient) => recipient.email.toLowerCase() !== email.toLowerCase(),
+        ),
+      );
+      router.refresh();
     });
-  }
-
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Unsubscribe
-        </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
-      </div>
-    );
   }
 
   if (migrationWarning) {
@@ -211,6 +118,19 @@ export default function UnsubscribeSettingsPanel() {
         <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">{migrationWarning}</p>
         <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">
           Required file: <code>009_add_unsubscribe.sql</code>
+        </p>
+      </div>
+    );
+  }
+
+  if (!initialSettings) {
+    return (
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+          Unsubscribe
+        </h2>
+        <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+          Failed to load unsubscribe settings.
         </p>
       </div>
     );

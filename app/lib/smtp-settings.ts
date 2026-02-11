@@ -48,6 +48,8 @@ export function isSmtpMigrationRequiredError(error: unknown): boolean {
   );
 }
 
+let workspaceEmailSchemaReadyPromise: Promise<void> | null = null;
+
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
@@ -94,13 +96,19 @@ function toPublicSettings(row?: WorkspaceEmailSettingsRow): WorkspaceEmailSettin
 }
 
 export async function assertWorkspaceEmailSettingsSchemaReady(): Promise<void> {
-  const [result] = await sql<{ ws: string | null }[]>`
-    select to_regclass('public.workspace_email_settings') as ws
-  `;
+  if (!workspaceEmailSchemaReadyPromise) {
+    workspaceEmailSchemaReadyPromise = (async () => {
+      const [result] = await sql<{ ws: string | null }[]>`
+        select to_regclass('public.workspace_email_settings') as ws
+      `;
 
-  if (!result?.ws) {
-    throw buildSmtpMigrationRequiredError();
+      if (!result?.ws) {
+        throw buildSmtpMigrationRequiredError();
+      }
+    })();
   }
+
+  return workspaceEmailSchemaReadyPromise;
 }
 
 export async function fetchWorkspaceEmailSettings(

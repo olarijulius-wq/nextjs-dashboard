@@ -37,6 +37,8 @@ export function isDocumentsMigrationRequiredError(error: unknown): boolean {
   );
 }
 
+let documentsSchemaReadyPromise: Promise<void> | null = null;
+
 function toDocumentSettings(row?: WorkspaceDocumentSettingsRow): WorkspaceDocumentSettings {
   if (!row) {
     return {
@@ -58,18 +60,24 @@ function toDocumentSettings(row?: WorkspaceDocumentSettingsRow): WorkspaceDocume
 }
 
 export async function assertDocumentsSchemaReady(): Promise<void> {
-  const [result] = await sql<{
-    settings: string | null;
-    files: string | null;
-  }[]>`
-    select
-      to_regclass('public.workspace_document_settings') as settings,
-      to_regclass('public.workspace_files') as files
-  `;
+  if (!documentsSchemaReadyPromise) {
+    documentsSchemaReadyPromise = (async () => {
+      const [result] = await sql<{
+        settings: string | null;
+        files: string | null;
+      }[]>`
+        select
+          to_regclass('public.workspace_document_settings') as settings,
+          to_regclass('public.workspace_files') as files
+      `;
 
-  if (!result?.settings || !result?.files) {
-    throw buildDocumentsMigrationRequiredError();
+      if (!result?.settings || !result?.files) {
+        throw buildDocumentsMigrationRequiredError();
+      }
+    })();
   }
+
+  return documentsSchemaReadyPromise;
 }
 
 export async function fetchWorkspaceDocumentSettings(

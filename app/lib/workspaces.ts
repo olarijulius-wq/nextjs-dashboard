@@ -59,21 +59,29 @@ export function isTeamMigrationRequiredError(error: unknown): boolean {
   );
 }
 
-export async function assertWorkspaceSchemaReady(): Promise<void> {
-  const [result] = await sql<{
-    ws: string | null;
-    wm: string | null;
-    wi: string | null;
-  }[]>`
-    select
-      to_regclass('public.workspaces') as ws,
-      to_regclass('public.workspace_members') as wm,
-      to_regclass('public.workspace_invites') as wi
-  `;
+let workspaceSchemaReadyPromise: Promise<void> | null = null;
 
-  if (!result?.ws || !result?.wm || !result?.wi) {
-    throw buildTeamMigrationRequiredError();
+export async function assertWorkspaceSchemaReady(): Promise<void> {
+  if (!workspaceSchemaReadyPromise) {
+    workspaceSchemaReadyPromise = (async () => {
+      const [result] = await sql<{
+        ws: string | null;
+        wm: string | null;
+        wi: string | null;
+      }[]>`
+        select
+          to_regclass('public.workspaces') as ws,
+          to_regclass('public.workspace_members') as wm,
+          to_regclass('public.workspace_invites') as wi
+      `;
+
+      if (!result?.ws || !result?.wm || !result?.wi) {
+        throw buildTeamMigrationRequiredError();
+      }
+    })();
   }
+
+  return workspaceSchemaReadyPromise;
 }
 
 export async function requireCurrentUser() {

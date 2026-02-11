@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, secondaryButtonClasses } from '@/app/ui/button';
 import type { EmailProviderMode, WorkspaceEmailSettings } from '@/app/lib/smtp-settings';
 import {
@@ -27,23 +28,47 @@ const defaultSettings: WorkspaceEmailSettings = {
   replyTo: '',
 };
 
-export default function SmtpSettingsPanel() {
-  const [data, setData] = useState<ApiState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
+type SmtpSettingsPanelProps = {
+  initialSettings?: WorkspaceEmailSettings;
+  canEdit?: boolean;
+  userRole?: 'owner' | 'admin' | 'member';
+  migrationMessage?: string | null;
+};
+
+export default function SmtpSettingsPanel({
+  initialSettings,
+  canEdit: initialCanEdit = false,
+  userRole: initialUserRole = 'member',
+  migrationMessage = null,
+}: SmtpSettingsPanelProps) {
+  const router = useRouter();
+  const baseSettings = initialSettings ?? defaultSettings;
+  const [data, setData] = useState<ApiState | null>(
+    initialSettings
+      ? {
+          canEdit: initialCanEdit,
+          userRole: initialUserRole,
+          settings: initialSettings,
+        }
+      : null,
+  );
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const [provider, setProvider] = useState<EmailProviderMode>('resend');
-  const [smtpHost, setSmtpHost] = useState('');
-  const [smtpPort, setSmtpPort] = useState('587');
-  const [smtpSecure, setSmtpSecure] = useState(false);
-  const [smtpUsername, setSmtpUsername] = useState('');
+  const [provider, setProvider] = useState<EmailProviderMode>(baseSettings.provider);
+  const [smtpHost, setSmtpHost] = useState(baseSettings.smtpHost);
+  const [smtpPort, setSmtpPort] = useState(
+    baseSettings.smtpPort ? String(baseSettings.smtpPort) : '',
+  );
+  const [smtpSecure, setSmtpSecure] = useState(baseSettings.smtpSecure);
+  const [smtpUsername, setSmtpUsername] = useState(baseSettings.smtpUsername);
   const [smtpPassword, setSmtpPassword] = useState('');
-  const [fromName, setFromName] = useState('');
-  const [fromEmail, setFromEmail] = useState('');
-  const [replyTo, setReplyTo] = useState('');
-  const [smtpPasswordPresent, setSmtpPasswordPresent] = useState(false);
+  const [fromName, setFromName] = useState(baseSettings.fromName);
+  const [fromEmail, setFromEmail] = useState(baseSettings.fromEmail);
+  const [replyTo, setReplyTo] = useState(baseSettings.replyTo);
+  const [smtpPasswordPresent, setSmtpPasswordPresent] = useState(
+    baseSettings.smtpPasswordPresent,
+  );
 
   const canEdit = data?.canEdit ?? false;
 
@@ -59,64 +84,6 @@ export default function SmtpSettingsPanel() {
     setReplyTo(settings.replyTo);
     setSmtpPasswordPresent(settings.smtpPasswordPresent);
   }
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      setLoading(true);
-      setMigrationMessage(null);
-      setMessage(null);
-
-      const res = await fetch('/api/settings/smtp', { cache: 'no-store' });
-      const payload = (await res.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            code?: string;
-            message?: string;
-            canEdit?: boolean;
-            userRole?: 'owner' | 'admin' | 'member';
-            settings?: WorkspaceEmailSettings;
-          }
-        | null;
-
-      if (!active) return;
-
-      if (!res.ok || !payload?.ok || !payload.settings || !payload.userRole) {
-        if (
-          payload?.code === 'TEAM_MIGRATION_REQUIRED' ||
-          payload?.code === 'SMTP_MIGRATION_REQUIRED'
-        ) {
-          setMigrationMessage(payload.message ?? 'Required migrations are missing.');
-          setData(null);
-          syncForm(defaultSettings);
-        } else {
-          setMessage({
-            ok: false,
-            text: payload?.message ?? 'Failed to load SMTP settings.',
-          });
-        }
-        setLoading(false);
-        return;
-      }
-
-      const nextData: ApiState = {
-        canEdit: Boolean(payload.canEdit),
-        userRole: payload.userRole,
-        settings: payload.settings,
-      };
-
-      setData(nextData);
-      syncForm(payload.settings);
-      setLoading(false);
-    }
-
-    load();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const showSmtpFields = provider === 'smtp';
 
@@ -164,9 +131,20 @@ export default function SmtpSettingsPanel() {
         return;
       }
 
+      const nextSettings = body.settings;
       setMessage({ ok: true, text: 'SMTP settings saved.' });
       setSmtpPassword('');
-      syncForm(body.settings);
+      syncForm(nextSettings);
+      setData((previous) =>
+        previous
+          ? { ...previous, settings: nextSettings }
+          : {
+              canEdit: initialCanEdit,
+              userRole: initialUserRole,
+              settings: nextSettings,
+            },
+      );
+      router.refresh();
     });
   }
 
@@ -197,17 +175,6 @@ export default function SmtpSettingsPanel() {
     });
   }
 
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          SMTP Integrations
-        </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
-      </div>
-    );
-  }
-
   if (migrationMessage) {
     return (
       <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-amber-500/40 dark:bg-amber-500/10 dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
@@ -215,6 +182,19 @@ export default function SmtpSettingsPanel() {
           SMTP requires database migration
         </h2>
         <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">{migrationMessage}</p>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+          SMTP Integrations
+        </h2>
+        <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+          Failed to load SMTP settings.
+        </p>
       </div>
     );
   }

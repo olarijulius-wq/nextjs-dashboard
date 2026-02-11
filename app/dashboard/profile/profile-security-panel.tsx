@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { signOut } from 'next-auth/react';
 import { primaryButtonClasses } from '@/app/ui/button';
 
@@ -8,6 +8,94 @@ type ApiResponse = {
   ok?: boolean;
   message?: string;
 };
+
+type EmailPasswordPanelProps = {
+  email: string;
+  connectedOnLabel: string;
+};
+
+export function EmailPasswordPanel({
+  email,
+  connectedOnLabel,
+}: EmailPasswordPanelProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!menuContainerRef.current) return;
+      if (!menuContainerRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-black">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Email &amp; Password
+          </h3>
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{email}</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Connected on {connectedOnLabel}
+          </p>
+        </div>
+        <div className="relative" ref={menuContainerRef}>
+          <button
+            type="button"
+            aria-label="Open authentication options"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => setMenuOpen((current) => !current)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-300 text-lg leading-none text-neutral-700 transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500/60 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+          >
+            &#8942;
+          </button>
+          {menuOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-800 dark:bg-neutral-950"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowChangePassword(true);
+                  setMenuOpen(false);
+                }}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 transition hover:bg-neutral-100 dark:text-slate-200 dark:hover:bg-neutral-900"
+              >
+                Change password
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {showChangePassword ? (
+        <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+          <ChangePasswordForm />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function ChangePasswordForm() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -54,7 +142,7 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form className="mt-4 space-y-3" onSubmit={handleChangePassword}>
+    <form className="space-y-3" onSubmit={handleChangePassword}>
       <div>
         <label
           className="mb-2 block text-xs font-medium text-slate-700 dark:text-slate-300"

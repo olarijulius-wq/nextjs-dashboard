@@ -25,9 +25,12 @@ export default async function TeamSettingsPage() {
 
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
+    const canViewInvites = context.userRole === 'owner';
     const [members, invites] = await Promise.all([
       fetchWorkspaceMembers(context.workspaceId),
-      fetchPendingWorkspaceInvites(context.workspaceId),
+      canViewInvites
+        ? fetchPendingWorkspaceInvites(context.workspaceId)
+        : Promise.resolve([]),
     ]);
     teamData = {
       workspaceName: context.workspaceName,

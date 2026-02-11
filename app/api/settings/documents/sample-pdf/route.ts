@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import PDFDocument from 'pdfkit';
+import type PDFDocumentType from 'pdfkit';
 import {
   DOCUMENTS_MIGRATION_REQUIRED_CODE,
   fetchWorkspaceDocumentSettings,
@@ -12,6 +12,8 @@ import {
 } from '@/app/lib/workspaces';
 
 export const runtime = 'nodejs';
+
+const PDFDocument = require('pdfkit/js/pdfkit.standalone') as typeof PDFDocumentType;
 
 const migrationMessage =
   'Documents requires DB migrations 007_add_workspaces_and_team.sql and 010_add_documents_settings.sql. Run migrations and retry.';
