@@ -2,7 +2,6 @@ import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import Google from 'next-auth/providers/google';
 import GitHub from 'next-auth/providers/github';
-import Apple from 'next-auth/providers/apple';
 import { AuthError } from 'next-auth';
 import { authConfig } from './auth.config';
 import { z } from 'zod';
@@ -15,6 +14,29 @@ const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+const rawAuthUrl = process.env.AUTH_URL;
+const normalizedAuthUrl =
+  rawAuthUrl?.replace(/\/api\/auth\/?$/, '') || rawAuthUrl || '';
+const resolvedBaseUrl = process.env.NEXTAUTH_URL || normalizedAuthUrl;
+
+if (!process.env.NEXTAUTH_URL && resolvedBaseUrl) {
+  process.env.NEXTAUTH_URL = resolvedBaseUrl;
+}
+
+if (process.env.NODE_ENV !== 'production') {
+  console.info('[auth][debug] env', {
+    googleClientIdPresent: Boolean(process.env.GOOGLE_CLIENT_ID),
+    googleClientSecretPresent: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+    githubClientIdPresent: Boolean(process.env.GITHUB_CLIENT_ID),
+    githubClientSecretPresent: Boolean(process.env.GITHUB_CLIENT_SECRET),
+    nextAuthUrlPresent: Boolean(process.env.NEXTAUTH_URL),
+    nextAuthSecretPresent: Boolean(
+      process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
+    ),
+  });
+  console.info('[auth][debug] resolvedBaseUrl', process.env.NEXTAUTH_URL || null);
 }
 
 const oauthProviders = [];
@@ -33,21 +55,19 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: 'read:user user:email',
+        },
+      },
     }),
   );
 }
 
-if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
-  oauthProviders.push(
-    Apple({
-      clientId: process.env.APPLE_CLIENT_ID,
-      clientSecret: process.env.APPLE_CLIENT_SECRET,
-    }),
-  );
-}
- 
-export const { auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  trustHost: true,
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   logger: {
     error(code, ...message) {
       const parts = [code, ...message];
@@ -180,7 +200,7 @@ export const { auth, signIn, signOut } = NextAuth({
         }[]>`
           select id, name
           from users
-          where lower(email) = ${email}
+          where lower(trim(email)) = ${email}
           limit 1
         `;
 
