@@ -420,12 +420,20 @@ export default async function RemindersPage() {
       };
     });
 
-    const isDev = process.env.NODE_ENV !== 'production';
-    const isOwner = workspaceContext.userRole === 'owner';
-    const runToken = process.env.REMINDER_CRON_TOKEN?.trim() || '';
-    const runEndpoint = runToken
-      ? `/api/reminders/run?token=${encodeURIComponent(runToken)}`
-      : null;
+    const canRunReminders =
+      workspaceContext.userRole === 'owner' || workspaceContext.userRole === 'admin';
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(
+        '[reminders] page context',
+        JSON.stringify({
+          workspaceId: workspaceContext.workspaceId,
+          userEmail: workspaceContext.userEmail,
+          resolvedRole: workspaceContext.userRole,
+          canRunReminders,
+        }),
+      );
+    }
 
     const resendDomain = getEmailDomain(emailSettings?.fromEmail ?? '');
 
@@ -445,8 +453,7 @@ export default async function RemindersPage() {
 
         <RemindersPanel
           items={items}
-          showRunNowButton={isDev && isOwner}
-          runEndpoint={runEndpoint}
+          canRunReminders={canRunReminders}
           smtpMigrationWarning={smtpMigrationWarning}
           emailProvider={emailSettings?.provider ?? null}
           smtpHost={emailSettings?.smtpHost ?? null}

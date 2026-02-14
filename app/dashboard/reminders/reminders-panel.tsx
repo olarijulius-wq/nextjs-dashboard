@@ -32,8 +32,7 @@ export type ReminderPanelItem = {
 
 type RemindersPanelProps = {
   items: ReminderPanelItem[];
-  showRunNowButton: boolean;
-  runEndpoint: string | null;
+  canRunReminders: boolean;
   smtpMigrationWarning: string | null;
   emailProvider: string | null;
   smtpHost: string | null;
@@ -344,8 +343,7 @@ type UpcomingTableProps = {
   items: ReminderPanelItem[];
   selectedItem: ReminderPanelItem | null;
   onSelectItem: (invoiceId: string) => void;
-  showRunNowButton: boolean;
-  runEndpoint: string | null;
+  canRunReminders: boolean;
   handleRunNow: () => void;
   isRunning: boolean;
   runMessage: string;
@@ -362,8 +360,7 @@ function UpcomingTable({
   items,
   selectedItem,
   onSelectItem,
-  showRunNowButton,
-  runEndpoint,
+  canRunReminders,
   handleRunNow,
   isRunning,
   runMessage,
@@ -415,7 +412,7 @@ function UpcomingTable({
             Next 50 reminder candidates sorted by next send date.
           </p>
         </div>
-        {showRunNowButton ? (
+        {canRunReminders ? (
           <div className="w-full">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex items-start gap-3">
@@ -443,21 +440,32 @@ function UpcomingTable({
                 <button
                   type="button"
                   onClick={handleRunNow}
-                  disabled={isRunning || !runEndpoint}
+                  disabled={isRunning}
                   className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-black transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60 md:h-9 md:w-auto md:text-xs"
                 >
-                  {isRunning ? 'Running...' : 'Run reminders now (dev)'}
+                  {isRunning ? 'Running...' : 'Run reminders now'}
                 </button>
               </div>
             </div>
             {runMessage ? (
               <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">{runMessage}</p>
             ) : null}
-            {!runEndpoint ? (
-              <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">Missing REMINDER_CRON_TOKEN.</p>
-            ) : null}
           </div>
-        ) : null}
+        ) : (
+          <div className="w-full md:ml-auto md:w-auto md:text-right">
+            <button
+              type="button"
+              disabled
+              title="Owner/Admin only"
+              className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-black opacity-60 md:h-9 md:w-auto md:text-xs"
+            >
+              Run reminders now
+            </button>
+            <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+              Owner/Admin only.
+            </p>
+          </div>
+        )}
       </div>
 
       <FiltersRow
@@ -965,8 +973,7 @@ function PauseModal({
 
 export default function RemindersPanel({
   items,
-  showRunNowButton,
-  runEndpoint,
+  canRunReminders,
   smtpMigrationWarning,
   emailProvider,
   smtpHost,
@@ -1059,7 +1066,7 @@ export default function RemindersPanel({
   };
 
   const handleRunNow = () => {
-    if (!runEndpoint || isRunning) {
+    if (isRunning) {
       return;
     }
 
@@ -1067,7 +1074,7 @@ export default function RemindersPanel({
     setLatestRunResult(null);
     startTransition(async () => {
       try {
-        const endpoint = new URL(runEndpoint, window.location.origin);
+        const endpoint = new URL('/api/reminders/run', window.location.origin);
         if (dryRun) {
           endpoint.searchParams.set('dryRun', '1');
         } else {
@@ -1260,8 +1267,7 @@ export default function RemindersPanel({
             items={items}
             selectedItem={selectedItem}
             onSelectItem={handleSelectItem}
-            showRunNowButton={showRunNowButton}
-            runEndpoint={runEndpoint}
+            canRunReminders={canRunReminders}
             handleRunNow={handleRunNow}
             isRunning={isRunning}
             runMessage={runMessage}

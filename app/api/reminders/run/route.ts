@@ -19,6 +19,8 @@ import {
   type ReminderRunSkippedBreakdown,
   type ReminderRunTriggeredBy,
 } from '@/app/lib/reminder-runs';
+import { auth } from '@/auth';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 
 export const runtime = 'nodejs';
 
@@ -84,14 +86,50 @@ function getBaseUrl() {
   );
 }
 
-function getAuthToken(req: Request) {
-  const header = req.headers.get('authorization');
-  if (header?.startsWith('Bearer ')) {
-    return header.slice('Bearer '.length).trim();
+function getCronAuthToken(req: Request) {
+  const headerToken = req.headers.get('x-reminder-cron-token')?.trim();
+  if (headerToken) {
+    return headerToken;
   }
 
   const url = new URL(req.url);
   return url.searchParams.get('token');
+}
+
+async function authorizeRunRequest(req: Request) {
+  const expectedCronToken = process.env.REMINDER_CRON_TOKEN?.trim() || '';
+  const providedCronToken = getCronAuthToken(req)?.trim() || '';
+  if (expectedCronToken && providedCronToken === expectedCronToken) {
+    return { ok: true as const, source: 'cron' as const };
+  }
+
+  const session = await auth();
+  if (!session?.user?.email) {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+    };
+  }
+
+  try {
+    const context = await ensureWorkspaceContextForCurrentUser();
+    if (context.userRole !== 'owner' && context.userRole !== 'admin') {
+      return {
+        ok: false as const,
+        response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      };
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return {
+        ok: false as const,
+        response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      };
+    }
+    throw error;
+  }
+
+  return { ok: true as const, source: 'manual' as const };
 }
 
 function formatAmount(amount: number) {
@@ -329,11 +367,9 @@ async function fetchReminderCandidates(includeReminderPauseJoin: boolean) {
 
 // ÜHINE job, mida POST ja GET mõlemad kasutavad
 async function runReminderJob(req: Request) {
-  const token = getAuthToken(req);
-  const expectedToken = process.env.REMINDER_CRON_TOKEN;
-
-  if (!expectedToken || token !== expectedToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const authorization = await authorizeRunRequest(req);
+  if (!authorization.ok) {
+    return authorization.response;
   }
 
   const startedAt = Date.now();
