@@ -6,6 +6,7 @@ import {
 import ConnectStripeButton from '../connect-stripe-button';
 import { primaryButtonClasses } from '@/app/ui/button';
 import ResyncConnectStatusButton from './resync-connect-status-button';
+import { checkConnectedAccountAccess } from '@/app/lib/stripe-connect';
 
 export const metadata: Metadata = {
   title: 'Payouts',
@@ -14,6 +15,16 @@ export const metadata: Metadata = {
 export default async function PayoutsPage() {
   const email = await requireUserEmail();
   const status = await fetchStripeConnectStatusForUser(email);
+  const isTest = process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') ?? false;
+  const modeLabel = isTest ? 'Test' : 'Live';
+  let retrieveStatus = 'not checked';
+
+  if (status.accountId) {
+    const accessCheck = await checkConnectedAccountAccess(status.accountId);
+    retrieveStatus = accessCheck.ok
+      ? 'ok'
+      : `failed (${accessCheck.isModeMismatch ? 'mode/account mismatch' : accessCheck.message})`;
+  }
 
   const statusPill =
     status.isReadyForTransfers
@@ -41,25 +52,45 @@ export default async function PayoutsPage() {
       </h1>
 
       {!status.hasAccount ? (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_16px_30px_rgba(0,0,0,0.45)]">
-          <div className="mb-3">
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusPill.className}`}
-            >
-              {statusPill.label}
-            </span>
-          </div>
-          <p className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
-            No Connect account yet. Connect Stripe to receive payouts.
-          </p>
-          <ConnectStripeButton />
-        </div>
-      ) : (
         <div className="space-y-4">
+          {process.env.NODE_ENV !== 'production' ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+              <p>
+                <strong>Debug</strong> Key mode: {modeLabel.toLowerCase()}
+              </p>
+              <p>Connected account: {status.accountId ?? 'none'}</p>
+              <p>accounts.retrieve: {retrieveStatus}</p>
+            </div>
+          ) : null}
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_16px_30px_rgba(0,0,0,0.45)]">
             <div className="mb-3">
               <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusPill?.className ?? ''}`}
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusPill.className}`}
+              >
+                {statusPill.label}
+              </span>
+            </div>
+            <p className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
+              No Connect account yet. Connect Stripe to receive payouts.
+            </p>
+            <ConnectStripeButton label={`Connect Stripe (${modeLabel} mode)`} />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {process.env.NODE_ENV !== 'production' ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+              <p>
+                <strong>Debug</strong> Key mode: {modeLabel.toLowerCase()}
+              </p>
+              <p>Connected account: {status.accountId ?? 'none'}</p>
+              <p>accounts.retrieve: {retrieveStatus}</p>
+            </div>
+          ) : null}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_16px_30px_rgba(0,0,0,0.45)]">
+            <div className="mb-3">
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusPill.className}`}
               >
                 {statusPill.label}
               </span>
@@ -81,6 +112,10 @@ export default async function PayoutsPage() {
           {!status.isReadyForTransfers ? (
             <ConnectStripeButton label="Continue Stripe onboarding" />
           ) : null}
+          <ConnectStripeButton
+            label={`Reconnect Stripe (${modeLabel} mode)`}
+            path="/api/stripe/connect/onboard?reconnect=1"
+          />
           <ResyncConnectStatusButton />
         </div>
       )}

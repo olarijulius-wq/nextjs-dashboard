@@ -5,10 +5,12 @@ import { Button } from '@/app/ui/button';
 
 type ConnectStripeButtonProps = {
   label?: string;
+  path?: string;
 };
 
 export default function ConnectStripeButton({
   label = 'Connect Stripe',
+  path = '/api/stripe/connect/onboard',
 }: ConnectStripeButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,7 @@ export default function ConnectStripeButton({
     setError(null);
 
     try {
-      const res = await fetch('/api/stripe/connect/onboard', { method: 'POST' });
+      const res = await fetch(path, { method: 'POST' });
       const data = await res.json();
 
       if (!res.ok) {

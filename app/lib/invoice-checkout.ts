@@ -53,9 +53,7 @@ async function getInvoiceOwnerStripeConfig(
 
   return {
     applicationFeeAmount,
-    connectAccountId: connectStatus.isReadyForTransfers
-      ? connectStatus.accountId
-      : null,
+    connectAccountId: connectStatus.hasAccount ? connectStatus.accountId : null,
   };
 }
 
@@ -79,45 +77,51 @@ export async function createInvoiceCheckoutSession(
   const paymentIntentData: {
     metadata: Record<string, string>;
     application_fee_amount?: number;
-    transfer_data?: { destination: string };
   } = {
     metadata: {
+      invoiceId: invoice.id,
       invoice_id: invoice.id,
       user_email: invoice.user_email,
     },
   };
 
   if (ownerStripeConfig.connectAccountId) {
+    // Direct charge: Checkout session is created on the connected account,
+    // so Stripe processing fees are paid by the connected account.
     if (ownerStripeConfig.applicationFeeAmount > 0) {
       paymentIntentData.application_fee_amount =
         ownerStripeConfig.applicationFeeAmount;
     }
-    paymentIntentData.transfer_data = {
-      destination: ownerStripeConfig.connectAccountId,
-    };
   }
 
-  return stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: 'eur',
-          unit_amount: invoice.amount,
-          product_data: {
-            name: `Invoice ${invoiceLabel}`,
+  return stripe.checkout.sessions.create(
+    {
+      mode: 'payment',
+      expand: ['payment_intent'],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'eur',
+            unit_amount: invoice.amount,
+            product_data: {
+              name: `Invoice ${invoiceLabel}`,
+            },
           },
         },
+      ],
+      customer_email: invoice.customer_email ?? undefined,
+      metadata: {
+        invoiceId: invoice.id,
+        invoice_id: invoice.id,
+        user_email: invoice.user_email,
       },
-    ],
-    customer_email: invoice.customer_email ?? undefined,
-    metadata: {
-      invoice_id: invoice.id,
-      user_email: invoice.user_email,
+      payment_intent_data: paymentIntentData,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     },
-    payment_intent_data: paymentIntentData,
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-  });
+    ownerStripeConfig.connectAccountId
+      ? { stripeAccount: ownerStripeConfig.connectAccountId }
+      : undefined,
+  );
 }
