@@ -1,4 +1,7 @@
 // app/api/stripe/webhook/route.ts
+// Local test note:
+// stripe payment_intents create --amount 50 --currency eur --payment-method pm_card_visa --confirm true --metadata invoiceId=<invoice_id> --stripe-account <acct_id>
+// Confirm the invoice stays pending when amount/currency does not match.
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import postgres from "postgres";
@@ -103,7 +106,7 @@ async function retrievePaymentIntentWithAccountContext(
     );
   } catch (err: any) {
     if (isStripeResourceMissing404(err)) {
-      console.warn(
+      debugLog(
         "[stripe webhook] payment_intent retrieve resource_missing (ignored)",
         {
           paymentIntentId,
@@ -148,7 +151,7 @@ async function retrieveChargeWithAccountContext(
     );
   } catch (err: any) {
     if (isStripeResourceMissing404(err)) {
-      console.warn("[stripe webhook] charge retrieve resource_missing (ignored)", {
+      debugLog("[stripe webhook] charge retrieve resource_missing (ignored)", {
         chargeId,
         eventAccount: eventAccount ?? null,
         code: err?.code,
@@ -169,6 +172,397 @@ async function findInvoiceStatusById(invoiceId: string): Promise<string | null> 
     limit 1
   `;
   return rows[0]?.status ?? null;
+}
+
+type InvoiceMutationByInvoiceIdInput = {
+  invoiceId: string;
+  eventAccount?: string | null;
+  amount: number | null | undefined;
+  currency: string | null | undefined;
+  paymentIntentId?: string | null;
+  checkoutSessionId?: string | null;
+  chargeId?: string | null;
+  disputeId?: string | null;
+};
+
+type InvoiceMutationByInvoiceIdResult =
+  | { ok: true; invoice: InvoiceValidationRow }
+  | {
+      ok: false;
+      reason: string;
+      invoice?: InvoiceValidationRow;
+    };
+
+type InvoiceValidationRow = {
+  id: string;
+  status: string;
+  amount: number;
+  currency: string | null;
+  workspace_id: string | null;
+  owner_email: string | null;
+  user_email: string | null;
+  stripe_checkout_session_id: string | null;
+  stripe_payment_intent_id: string | null;
+  owner_connect_account_id: string | null;
+  workspace_owner_connect_account_id: string | null;
+};
+
+function normalizeCurrency(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+type InvoiceMoneyValidationRow = {
+  id: string;
+  amount: number;
+  currency: string | null;
+  owner_stripe_connect_account_id: string | null;
+};
+
+type InvoiceForValidation = {
+  amount: number;
+  currency: string | null;
+  ownerStripeConnectAccountId: string | null;
+};
+
+type StripeMoney = {
+  amount: number | null;
+  currency: string | null;
+};
+
+async function loadInvoiceForValidation(
+  invoiceId: string,
+): Promise<InvoiceForValidation | null> {
+  const rows = await sql<InvoiceMoneyValidationRow[]>`
+    select
+      i.id,
+      i.amount,
+      i.currency,
+      coalesce(
+        w_active_owner.stripe_connect_account_id,
+        w_owner_owner.stripe_connect_account_id,
+        u.stripe_connect_account_id
+      ) as owner_stripe_connect_account_id
+    from invoices i
+    left join public.users u
+      on lower(u.email) = lower(i.user_email)
+    left join public.workspaces w_active
+      on w_active.id = u.active_workspace_id
+    left join public.users w_active_owner
+      on w_active_owner.id = w_active.owner_user_id
+    left join public.workspaces w_owner
+      on w_owner.owner_user_id = u.id
+    left join public.users w_owner_owner
+      on w_owner_owner.id = w_owner.owner_user_id
+    where i.id = ${invoiceId}
+    limit 1
+  `;
+  const invoice = rows[0];
+  if (!invoice) return null;
+  return {
+    amount: invoice.amount,
+    currency: invoice.currency,
+    ownerStripeConnectAccountId: invoice.owner_stripe_connect_account_id,
+  };
+}
+
+function extractStripeMoneyFromEvent(
+  obj: Stripe.Checkout.Session | Stripe.PaymentIntent | Stripe.Charge | null | undefined,
+): StripeMoney {
+  if (!obj) return { amount: null, currency: null };
+  const candidate = obj as any;
+  const currency = typeof candidate.currency === "string" ? candidate.currency : null;
+  if (typeof candidate.amount_total === "number") {
+    return { amount: candidate.amount_total, currency };
+  }
+  if (typeof candidate.amount === "number") {
+    return { amount: candidate.amount, currency };
+  }
+  return { amount: null, currency };
+}
+
+function validateInvoiceMutation({
+  invoice,
+  stripeMoney,
+  eventAccount,
+}: {
+  invoice: InvoiceForValidation | null;
+  stripeMoney: StripeMoney;
+  eventAccount?: string | null;
+}): { ok: boolean; reason: string } {
+  if (!invoice) return { ok: false, reason: "invoice not found" };
+
+  if (typeof stripeMoney.amount !== "number" || !Number.isInteger(stripeMoney.amount)) {
+    return { ok: false, reason: "stripe amount missing or not an integer" };
+  }
+  if (invoice.amount !== stripeMoney.amount) {
+    return { ok: false, reason: "amount mismatch" };
+  }
+
+  const invoiceCurrency = normalizeCurrency(invoice.currency);
+  const stripeCurrency = normalizeCurrency(stripeMoney.currency);
+  if (!invoiceCurrency || !stripeCurrency || invoiceCurrency !== stripeCurrency) {
+    return { ok: false, reason: "currency mismatch" };
+  }
+
+  const normalizedEventAccount = eventAccount?.trim() || null;
+  if (normalizedEventAccount) {
+    const expectedAccount = invoice.ownerStripeConnectAccountId?.trim() || null;
+    if (!expectedAccount) {
+      return {
+        ok: false,
+        reason: "missing invoice owner connect account mapping",
+      };
+    }
+    if (expectedAccount !== normalizedEventAccount) {
+      return { ok: false, reason: "connect account mismatch" };
+    }
+  }
+
+  return { ok: true, reason: "ok" };
+}
+
+async function validatePaidMutationOrWarn({
+  eventType,
+  eventId,
+  eventAccount,
+  invoiceId,
+  stripeObject,
+  paymentIntentId,
+  checkoutSessionId,
+  chargeId,
+}: {
+  eventType: string;
+  eventId: string;
+  eventAccount?: string | null;
+  invoiceId: string;
+  stripeObject: Stripe.Checkout.Session | Stripe.PaymentIntent | Stripe.Charge;
+  paymentIntentId?: string | null;
+  checkoutSessionId?: string | null;
+  chargeId?: string | null;
+}): Promise<boolean> {
+  const invoice = await loadInvoiceForValidation(invoiceId);
+  const stripeMoney = extractStripeMoneyFromEvent(stripeObject);
+  const validation = validateInvoiceMutation({
+    invoice,
+    stripeMoney,
+    eventAccount,
+  });
+  if (validation.ok) return true;
+
+  console.warn("[stripe webhook] invoice mutation skipped after validation failure", {
+    reason: validation.reason,
+    eventType,
+    eventId,
+    eventAccount: eventAccount ?? null,
+    invoiceId,
+    amount: stripeMoney.amount ?? null,
+    currency: stripeMoney.currency ?? null,
+    paymentIntentId: paymentIntentId ?? null,
+    checkoutSessionId: checkoutSessionId ?? null,
+    chargeId: chargeId ?? null,
+    disputeId: null,
+  });
+  return false;
+}
+
+async function validateInvoiceMutationByInvoiceId({
+  invoiceId,
+  eventAccount,
+  amount,
+  currency,
+  paymentIntentId,
+  checkoutSessionId,
+  chargeId,
+  disputeId,
+}: InvoiceMutationByInvoiceIdInput): Promise<InvoiceMutationByInvoiceIdResult> {
+  const rows = await sql<InvoiceValidationRow[]>`
+    select
+      i.id,
+      i.status,
+      i.amount,
+      i.currency,
+      coalesce(w_active.id, w_owner.id, u.active_workspace_id) as workspace_id,
+      u.email as owner_email,
+      i.user_email,
+      i.stripe_checkout_session_id,
+      i.stripe_payment_intent_id,
+      u.stripe_connect_account_id as owner_connect_account_id,
+      coalesce(
+        w_active_owner.stripe_connect_account_id,
+        w_owner_owner.stripe_connect_account_id
+      ) as workspace_owner_connect_account_id
+    from invoices i
+    left join public.users u
+      on lower(u.email) = lower(i.user_email)
+    left join public.workspaces w_active
+      on w_active.id = u.active_workspace_id
+    left join public.users w_active_owner
+      on w_active_owner.id = w_active.owner_user_id
+    left join public.workspaces w_owner
+      on w_owner.owner_user_id = u.id
+    left join public.users w_owner_owner
+      on w_owner_owner.id = w_owner.owner_user_id
+    where i.id = ${invoiceId}
+    limit 1
+  `;
+
+  const invoice = rows[0];
+  if (!invoice) {
+    const reason = "invoice not found";
+    debugLog("[stripe webhook] invoice validation warning", {
+      reason,
+      invoiceId,
+      eventAccount: eventAccount ?? null,
+      paymentIntentId: paymentIntentId ?? null,
+      checkoutSessionId: checkoutSessionId ?? null,
+      chargeId: chargeId ?? null,
+      disputeId: disputeId ?? null,
+    });
+    return { ok: false, reason };
+  }
+
+  if (typeof amount !== "number" || !Number.isInteger(amount)) {
+    const reason = "stripe amount missing or not an integer";
+    debugLog("[stripe webhook] invoice validation warning", {
+      reason,
+      invoiceId,
+      eventAccount: eventAccount ?? null,
+      paymentIntentId: paymentIntentId ?? null,
+      checkoutSessionId: checkoutSessionId ?? null,
+      chargeId: chargeId ?? null,
+      disputeId: disputeId ?? null,
+      stripeAmount: amount ?? null,
+    });
+    return { ok: false, reason, invoice };
+  }
+
+  if (invoice.amount !== amount) {
+    const reason = "amount mismatch";
+    debugLog("[stripe webhook] invoice validation warning", {
+      reason,
+      invoiceId,
+      eventAccount: eventAccount ?? null,
+      paymentIntentId: paymentIntentId ?? null,
+      checkoutSessionId: checkoutSessionId ?? null,
+      chargeId: chargeId ?? null,
+      disputeId: disputeId ?? null,
+      invoiceAmount: invoice.amount,
+      stripeAmount: amount,
+    });
+    return { ok: false, reason, invoice };
+  }
+
+  const invoiceCurrency = normalizeCurrency(invoice.currency);
+  const stripeCurrency = normalizeCurrency(currency);
+  if (!invoiceCurrency || !stripeCurrency || invoiceCurrency !== stripeCurrency) {
+    const reason = "currency mismatch";
+    debugLog("[stripe webhook] invoice validation warning", {
+      reason,
+      invoiceId,
+      eventAccount: eventAccount ?? null,
+      paymentIntentId: paymentIntentId ?? null,
+      checkoutSessionId: checkoutSessionId ?? null,
+      chargeId: chargeId ?? null,
+      disputeId: disputeId ?? null,
+      invoiceCurrency: invoice.currency ?? null,
+      stripeCurrency: currency ?? null,
+    });
+    return { ok: false, reason, invoice };
+  }
+
+  const normalizedEventAccount = eventAccount?.trim() || null;
+  if (normalizedEventAccount) {
+    const expectedAccount =
+      invoice.workspace_owner_connect_account_id?.trim() ||
+      invoice.owner_connect_account_id?.trim() ||
+      null;
+    if (!expectedAccount) {
+      const reason = "missing invoice owner connect account mapping";
+      debugLog("[stripe webhook] invoice validation warning", {
+        reason,
+        invoiceId,
+        eventAccount: normalizedEventAccount,
+        paymentIntentId: paymentIntentId ?? null,
+        checkoutSessionId: checkoutSessionId ?? null,
+        chargeId: chargeId ?? null,
+        disputeId: disputeId ?? null,
+        ownerEmail: invoice.owner_email ?? invoice.user_email ?? null,
+        workspaceId: invoice.workspace_id,
+      });
+      return { ok: false, reason, invoice };
+    }
+    if (expectedAccount !== normalizedEventAccount) {
+      const reason = "connect account mismatch";
+      debugLog("[stripe webhook] invoice validation warning", {
+        reason,
+        invoiceId,
+        eventAccount: normalizedEventAccount,
+        expectedAccount,
+        paymentIntentId: paymentIntentId ?? null,
+        checkoutSessionId: checkoutSessionId ?? null,
+        chargeId: chargeId ?? null,
+        disputeId: disputeId ?? null,
+        ownerEmail: invoice.owner_email ?? invoice.user_email ?? null,
+        workspaceId: invoice.workspace_id,
+      });
+      return { ok: false, reason, invoice };
+    }
+  }
+
+  return { ok: true, invoice };
+}
+
+async function validateInvoiceMutationOrWarn({
+  eventType,
+  eventId,
+  eventAccount,
+  invoiceId,
+  amount,
+  currency,
+  paymentIntentId,
+  checkoutSessionId,
+  chargeId,
+  disputeId,
+}: {
+  eventType: string;
+  eventId: string;
+  eventAccount?: string | null;
+  invoiceId: string;
+  amount: number | null | undefined;
+  currency: string | null | undefined;
+  paymentIntentId?: string | null;
+  checkoutSessionId?: string | null;
+  chargeId?: string | null;
+  disputeId?: string | null;
+}): Promise<boolean> {
+  const validation = await validateInvoiceMutationByInvoiceId({
+    invoiceId,
+    eventAccount,
+    amount,
+    currency,
+    paymentIntentId,
+    checkoutSessionId,
+    chargeId,
+    disputeId,
+  });
+  if (validation.ok) return true;
+
+  console.warn("[stripe webhook] invoice mutation skipped after validation failure", {
+    reason: validation.reason,
+    eventType,
+    eventId,
+    eventAccount: eventAccount ?? null,
+    invoiceId,
+    amount: amount ?? null,
+    currency: currency ?? null,
+    paymentIntentId: paymentIntentId ?? null,
+    checkoutSessionId: checkoutSessionId ?? null,
+    chargeId: chargeId ?? null,
+    disputeId: disputeId ?? null,
+  });
+  return false;
 }
 
 async function resolveInvoiceIdFromPaymentIntent({
@@ -255,7 +649,7 @@ async function markInvoicePaid({
   });
 
   if (rowCount === 0) {
-    console.warn("[stripe webhook] invoice update affected 0 rows", {
+    debugLog("[stripe webhook] invoice update affected 0 rows", {
       eventType,
       eventId,
       eventAccount: eventAccount ?? null,
@@ -330,7 +724,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           updated[0],
         );
       } else {
-        console.warn(
+        debugLog(
           "checkout.session.completed -> no userId and no email found in session",
         );
       }
@@ -352,7 +746,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn(
+      debugLog(
         "[stripe webhook] checkout.session.completed missing invoiceId (ignored)",
         {
           checkoutSessionId: session.id,
@@ -370,6 +764,17 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       paymentIntentId,
       resolvedInvoiceId: invoiceId,
     });
+
+    const isValid = await validatePaidMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      stripeObject: session,
+      paymentIntentId,
+      checkoutSessionId,
+    });
+    if (!isValid) return;
 
     resolvedInvoiceId = invoiceId;
     invoiceUpdateRows = await markInvoicePaid({
@@ -496,7 +901,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn(
+      debugLog(
         "[stripe webhook] payment_intent.succeeded missing invoiceId (ignored)",
         {
           paymentIntentId,
@@ -514,6 +919,17 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       paymentIntentId,
       resolvedInvoiceId: invoiceId,
     });
+
+    const isValid = await validatePaidMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      stripeObject: intent,
+      paymentIntentId,
+      checkoutSessionId,
+    });
+    if (!isValid) return;
 
     resolvedInvoiceId = invoiceId;
     invoiceUpdateRows = await markInvoicePaid({
@@ -544,7 +960,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn(
+      debugLog(
         "[stripe webhook] payment_intent.payment_failed missing invoiceId (ignored)",
         {
           paymentIntentId,
@@ -565,26 +981,57 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       currentStatus,
     });
 
+    const isValid = await validateInvoiceMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      amount: intent.amount,
+      currency: intent.currency ?? null,
+      paymentIntentId,
+      checkoutSessionId,
+    });
+    if (!isValid) return;
+
     resolvedInvoiceId = invoiceId;
-    if (currentStatus === "pending") {
-      debugLog(
-        "[stripe webhook] payment_intent.payment_failed keeps invoice pending",
-        {
-          eventId: event.id,
-          eventAccount: event.account ?? null,
-          invoiceId,
-          paymentIntentId,
-        },
-      );
+    const intentStatus = String(intent.status ?? "").trim().toLowerCase();
+    const canOverridePaidToFailed = intentStatus === "requires_payment_method";
+
+    if (currentStatus !== "paid" || canOverridePaidToFailed) {
+      const updated = await sql`
+        update invoices
+        set status = 'failed'
+        where id = ${invoiceId}
+          and (
+            status <> 'paid'
+            or ${canOverridePaidToFailed}
+          )
+        returning id, status, paid_at, stripe_payment_intent_id, stripe_checkout_session_id
+      `;
+      invoiceUpdateRows = updated.length;
+      debugLog("[stripe webhook] invoice update", {
+        eventType: event.type,
+        eventId: event.id,
+        eventAccount: event.account ?? null,
+        invoiceId,
+        checkoutSessionId,
+        paymentIntentId,
+        currentStatus,
+        intentStatus,
+        canOverridePaidToFailed,
+        rows: updated.length,
+        invoice: updated[0] ?? null,
+      });
     } else {
       debugLog(
-        "[stripe webhook] payment_intent.payment_failed does not change non-pending invoice",
+        "[stripe webhook] payment_intent.payment_failed keeps paid invoice paid (unproven hard failure)",
         {
           eventId: event.id,
           eventAccount: event.account ?? null,
           invoiceId,
           paymentIntentId,
           currentStatus,
+          intentStatus,
         },
       );
     }
@@ -621,12 +1068,24 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn("[stripe webhook] charge.succeeded missing invoiceId (ignored)", {
+      debugLog("[stripe webhook] charge.succeeded missing invoiceId (ignored)", {
         chargeId: charge.id,
         paymentIntentId,
       });
       return;
     }
+
+    const isValid = await validatePaidMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      stripeObject: charge,
+      paymentIntentId,
+      checkoutSessionId,
+      chargeId: charge.id ?? null,
+    });
+    if (!isValid) return;
 
     await markInvoicePaid({
       invoiceId,
@@ -645,9 +1104,9 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     const paymentIntentId =
       typeof charge.payment_intent === "string" ? charge.payment_intent : null;
     let checkoutSessionId: string | null = null;
-    let invoiceId: string | null = readInvoiceIdFromMetadata(charge.metadata);
+    let invoiceId: string | null = null;
 
-    if (!invoiceId && paymentIntentId) {
+    if (paymentIntentId) {
       const resolved = await resolveInvoiceIdFromPaymentIntent({
         paymentIntentId,
         eventAccount: eventStripeAccount,
@@ -657,7 +1116,11 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn("[stripe webhook] charge.refunded missing invoiceId (ignored)", {
+      invoiceId = readInvoiceIdFromMetadata(charge.metadata);
+    }
+
+    if (!invoiceId) {
+      debugLog("[stripe webhook] charge.refunded missing invoiceId (ignored)", {
         eventId: event.id,
         eventAccount: event.account ?? null,
         chargeId,
@@ -685,56 +1148,73 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       isPartialRefund,
     });
 
-    if (isPartialRefund) {
-      debugLog(
-        "[stripe webhook] charge.refunded partial refund keeps invoice paid",
-        {
-          eventId: event.id,
-          eventAccount: event.account ?? null,
-          invoiceId,
-          chargeId,
-          amount,
-          amountRefunded,
-        },
-      );
-    } else {
-      const updated = await sql`
-        update invoices
-        set status = 'refunded'
-        where id = ${invoiceId}
-          and status = 'paid'
-        returning id, status, paid_at
-      `;
-      invoiceUpdateRows = updated.length;
-      debugLog("[stripe webhook] invoice update", {
-        eventType: event.type,
+    const isValid = await validateInvoiceMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      amount: charge.amount,
+      currency: charge.currency ?? null,
+      paymentIntentId,
+      checkoutSessionId,
+      chargeId,
+    });
+    if (!isValid) return;
+
+    const refundStatus = isPartialRefund ? "partially_refunded" : "refunded";
+    const updated = await sql`
+      update invoices
+      set
+        status = ${refundStatus},
+        refunded_at = now()
+      where id = ${invoiceId}
+        and status in ('paid', 'partially_refunded')
+      returning id, status, paid_at, refunded_at
+    `;
+    invoiceUpdateRows = updated.length;
+    debugLog("[stripe webhook] invoice update", {
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      chargeId,
+      paymentIntentId,
+      rows: updated.length,
+      invoice: updated[0] ?? null,
+      refundStatus,
+    });
+    if (updated.length === 0) {
+      const currentStatus = await findInvoiceStatusById(invoiceId);
+      const skipReason =
+        currentStatus === "refunded"
+          ? "invoice already in terminal refunded state"
+          : "invoice status not eligible for refund transition";
+      debugLog("[stripe webhook] charge.refunded skipped status change", {
         eventId: event.id,
         eventAccount: event.account ?? null,
         invoiceId,
-        chargeId,
-        paymentIntentId,
-        rows: updated.length,
-        invoice: updated[0] ?? null,
+        previousStatus: currentStatus,
+        skipReason,
       });
-      if (updated.length === 0) {
-        const currentStatus = await findInvoiceStatusById(invoiceId);
-        debugLog(
-          "[stripe webhook] charge.refunded skipped status change because invoice not paid",
-          {
-            eventId: event.id,
-            eventAccount: event.account ?? null,
-            invoiceId,
-            currentStatus,
-          },
-        );
-      }
     }
   }
 
-  if (event.type === "charge.dispute.created") {
+  if (
+    event.type === "charge.dispute.created" ||
+    event.type === "charge.dispute.funds_withdrawn"
+  ) {
     const dispute = event.data.object as Stripe.Dispute;
     const eventStripeAccount = event.account ?? undefined;
-    const chargeId = typeof dispute.charge === "string" ? dispute.charge : null;
+    const disputeCharge =
+      dispute.charge && typeof dispute.charge === "object" ? dispute.charge : null;
+    const chargeId =
+      typeof dispute.charge === "string"
+        ? dispute.charge
+        : typeof disputeCharge?.id === "string"
+          ? disputeCharge.id
+          : null;
+    let chargeAmount: number | null = null;
+    let chargeCurrency: string | null = null;
     let paymentIntentId =
       typeof (dispute as any).payment_intent === "string"
         ? ((dispute as any).payment_intent as string)
@@ -742,9 +1222,30 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     let checkoutSessionId: string | null = null;
     let invoiceId: string | null = null;
 
-    if (!paymentIntentId && chargeId) {
+    if (disputeCharge) {
+      chargeAmount =
+        typeof (disputeCharge as any).amount === "number"
+          ? ((disputeCharge as any).amount as number)
+          : null;
+      chargeCurrency =
+        typeof (disputeCharge as any).currency === "string"
+          ? ((disputeCharge as any).currency as string)
+          : null;
+      if (
+        !paymentIntentId &&
+        typeof (disputeCharge as any).payment_intent === "string"
+      ) {
+        paymentIntentId = (disputeCharge as any).payment_intent as string;
+      }
+    }
+
+    if (chargeId) {
       const charge = await retrieveChargeWithAccountContext(chargeId, eventStripeAccount);
-      if (charge && typeof charge.payment_intent === "string") {
+      if (charge) {
+        chargeAmount = typeof charge.amount === "number" ? charge.amount : null;
+        chargeCurrency = charge.currency ?? null;
+      }
+      if (!paymentIntentId && charge && typeof charge.payment_intent === "string") {
         paymentIntentId = charge.payment_intent;
       }
     }
@@ -759,7 +1260,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn(
+      debugLog(
         "[stripe webhook] charge.dispute.created missing invoiceId (ignored)",
         {
           eventId: event.id,
@@ -773,14 +1274,6 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     resolvedInvoiceId = invoiceId;
-    const updated = await sql`
-      update invoices
-      set status = 'disputed'
-      where id = ${invoiceId}
-        and status = 'paid'
-      returning id, status, paid_at
-    `;
-    invoiceUpdateRows = updated.length;
     debugLog("[stripe webhook] invoice resolution", {
       eventType: event.type,
       eventId: event.id,
@@ -791,6 +1284,28 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       paymentIntentId,
       resolvedInvoiceId: invoiceId,
     });
+
+    const isValid = await validateInvoiceMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      amount: chargeAmount,
+      currency: chargeCurrency,
+      paymentIntentId,
+      checkoutSessionId,
+      chargeId,
+      disputeId: dispute.id,
+    });
+    if (!isValid) return;
+
+    const updated = await sql`
+      update invoices
+      set status = 'disputed'
+      where id = ${invoiceId}
+      returning id, status, paid_at
+    `;
+    invoiceUpdateRows = updated.length;
     debugLog("[stripe webhook] invoice update", {
       eventType: event.type,
       eventId: event.id,
@@ -801,24 +1316,32 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       invoice: updated[0] ?? null,
     });
     if (updated.length === 0) {
-      const currentStatus = await findInvoiceStatusById(invoiceId);
-      debugLog(
-        "[stripe webhook] charge.dispute.created skipped status change because invoice not paid",
-        {
-          eventId: event.id,
-          eventAccount: event.account ?? null,
-          invoiceId,
-          currentStatus,
-        },
-      );
+      debugLog("[stripe webhook] dispute event invoice update affected 0 rows", {
+        eventType: event.type,
+        eventId: event.id,
+        eventAccount: event.account ?? null,
+        invoiceId,
+      });
     }
   }
 
-  if (event.type === "charge.dispute.closed") {
+  if (
+    event.type === "charge.dispute.closed" ||
+    (event.type as string) === "dispute.closed"
+  ) {
     const dispute = event.data.object as Stripe.Dispute;
     const eventStripeAccount = event.account ?? undefined;
-    const chargeId = typeof dispute.charge === "string" ? dispute.charge : null;
+    const disputeCharge =
+      dispute.charge && typeof dispute.charge === "object" ? dispute.charge : null;
+    const chargeId =
+      typeof dispute.charge === "string"
+        ? dispute.charge
+        : typeof disputeCharge?.id === "string"
+          ? disputeCharge.id
+          : null;
     const disputeStatus = String(dispute.status ?? "").trim().toLowerCase();
+    let chargeAmount: number | null = null;
+    let chargeCurrency: string | null = null;
     let paymentIntentId =
       typeof (dispute as any).payment_intent === "string"
         ? ((dispute as any).payment_intent as string)
@@ -826,9 +1349,30 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     let checkoutSessionId: string | null = null;
     let invoiceId: string | null = null;
 
-    if (!paymentIntentId && chargeId) {
+    if (disputeCharge) {
+      chargeAmount =
+        typeof (disputeCharge as any).amount === "number"
+          ? ((disputeCharge as any).amount as number)
+          : null;
+      chargeCurrency =
+        typeof (disputeCharge as any).currency === "string"
+          ? ((disputeCharge as any).currency as string)
+          : null;
+      if (
+        !paymentIntentId &&
+        typeof (disputeCharge as any).payment_intent === "string"
+      ) {
+        paymentIntentId = (disputeCharge as any).payment_intent as string;
+      }
+    }
+
+    if (chargeId) {
       const charge = await retrieveChargeWithAccountContext(chargeId, eventStripeAccount);
-      if (charge && typeof charge.payment_intent === "string") {
+      if (charge) {
+        chargeAmount = typeof charge.amount === "number" ? charge.amount : null;
+        chargeCurrency = charge.currency ?? null;
+      }
+      if (!paymentIntentId && charge && typeof charge.payment_intent === "string") {
         paymentIntentId = charge.payment_intent;
       }
     }
@@ -843,7 +1387,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (!invoiceId) {
-      console.warn(
+      debugLog(
         "[stripe webhook] charge.dispute.closed missing invoiceId (ignored)",
         {
           eventId: event.id,
@@ -858,11 +1402,41 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     }
 
     resolvedInvoiceId = invoiceId;
-    const targetStatus = disputeStatus === "lost" ? "dispute_lost" : "paid";
+    let targetStatus: string | null = null;
+    if (disputeStatus === "won") targetStatus = "paid";
+    if (disputeStatus === "lost") targetStatus = "lost";
+
+    if (!targetStatus) {
+      debugLog("[stripe webhook] dispute.closed has unsupported status (ignored)", {
+        eventType: event.type,
+        eventId: event.id,
+        eventAccount: event.account ?? null,
+        disputeId: dispute.id,
+        disputeStatus,
+        invoiceId,
+      });
+      return;
+    }
+
+    const isValid = await validateInvoiceMutationOrWarn({
+      eventType: event.type,
+      eventId: event.id,
+      eventAccount: event.account ?? null,
+      invoiceId,
+      amount: chargeAmount,
+      currency: chargeCurrency,
+      paymentIntentId,
+      checkoutSessionId,
+      chargeId,
+      disputeId: dispute.id,
+    });
+    if (!isValid) return;
+
     const updated = await sql`
       update invoices
       set status = ${targetStatus}
       where id = ${invoiceId}
+        and status = 'disputed'
       returning id, status, paid_at
     `;
     invoiceUpdateRows = updated.length;
@@ -913,7 +1487,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     });
 
     if (result.length === 0) {
-      console.warn("[connect webhook] account.updated no matching user row", {
+      debugLog("[connect webhook] account.updated no matching user row", {
         accountId: connectAccountId,
         payouts_enabled: account.payouts_enabled,
         details_submitted: account.details_submitted,
