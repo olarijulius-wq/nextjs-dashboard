@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   },
   description: 'Lateless Dashboard built with App Router.',
   metadataBase: new URL('https://next-learn-dashboard.vercel.sh'),
+  
 };
  
 export default function RootLayout({
