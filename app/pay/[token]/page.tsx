@@ -5,6 +5,7 @@ import PublicRefundRequest from '@/app/ui/invoices/public-refund-request';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatCurrency } from '@/app/lib/utils';
 import { verifyPayToken } from '@/app/lib/pay-link';
+import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { isRefundWindowOpen } from '@/app/lib/refund-requests';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -98,6 +99,7 @@ export default async function Page(props: PageProps) {
 
   const canRequestRefund = invoice.status === 'paid' && isRefundWindowOpen(invoice.paid_at);
   const isRefundWindowClosed = invoice.status === 'paid' && !canRequestRefund;
+  const canPay = canPayInvoiceStatus(invoice.status);
 
   return (
     <main className="min-h-screen bg-white px-6 py-12 text-neutral-900 dark:bg-black dark:text-zinc-100">
@@ -171,7 +173,7 @@ export default async function Page(props: PageProps) {
             <p className="text-xs text-neutral-500 dark:text-zinc-400">
               Secure payment powered by Stripe.
             </p>
-            {invoice.status === 'paid' ? (
+            {!canPay ? (
               <InvoiceStatus status={invoice.status} />
             ) : (
               <PublicPayButton token={params.token} />

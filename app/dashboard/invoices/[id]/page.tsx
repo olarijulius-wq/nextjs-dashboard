@@ -9,6 +9,7 @@ import { formatCurrency, formatDateToLocal } from '@/app/lib/utils';
 import { fetchInvoiceById, fetchUserPlanAndUsage } from '@/app/lib/data';
 import { updateInvoiceStatus } from '@/app/lib/actions';
 import { generatePayLink } from '@/app/lib/pay-link';
+import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { PLAN_CONFIG } from '@/app/lib/config';
 import {
   primaryButtonClasses,
@@ -142,7 +143,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               {statusLabel}
             </button>
           </form>
-          {invoice.status !== 'paid' && (
+          {canPayInvoiceStatus(invoice.status) && (
             <PayInvoiceButton invoiceId={invoice.id} />
           )}
           <DuplicateInvoiceButton id={invoice.id} />

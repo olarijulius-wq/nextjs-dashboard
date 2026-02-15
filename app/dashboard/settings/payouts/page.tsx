@@ -21,7 +21,9 @@ export default async function PayoutsPage() {
   const isTest = process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') ?? false;
   const modeLabel = isTest ? 'Test' : 'Live';
   const showStripeDebug =
-    process.env.DEBUG_STRIPE_UI === 'true' && userRole === 'owner';
+    process.env.NODE_ENV !== 'production' &&
+    process.env.DEBUG_STRIPE_UI === 'true' &&
+    userRole === 'owner';
   let retrieveStatus: string | null = null;
 
   if (showStripeDebug && status.accountId) {
@@ -78,7 +80,7 @@ export default async function PayoutsPage() {
             <p className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
               No Connect account yet. Connect Stripe to receive payouts.
             </p>
-            <ConnectStripeButton label={`Connect Stripe (${modeLabel} mode)`} />
+            <ConnectStripeButton label="Connect Stripe" />
           </div>
         </div>
       ) : (
@@ -118,7 +120,7 @@ export default async function PayoutsPage() {
             <ConnectStripeButton label="Continue Stripe onboarding" />
           ) : null}
           <ConnectStripeButton
-            label={`Reconnect Stripe (${modeLabel} mode)`}
+            label="Reconnect Stripe"
             path="/api/stripe/connect/onboard?reconnect=1"
           />
           <ResyncConnectStatusButton />

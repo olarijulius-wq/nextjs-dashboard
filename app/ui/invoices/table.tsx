@@ -6,6 +6,7 @@ import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatDateToLocal, formatCurrencySuffix } from '@/app/lib/utils';
 import type { InvoicesTable as InvoicesTableType } from '@/app/lib/definitions';
 import { DARK_PILL, DARK_SURFACE_SUBTLE } from '@/app/ui/theme/tokens';
+import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 
 export default function InvoicesTable({
   invoices,
@@ -66,7 +67,7 @@ export default function InvoicesTable({
                     </p>
                   </div>
                   <div className="flex shrink-0 justify-end gap-2">
-                    {invoice.status !== 'paid' && (
+                    {canPayInvoiceStatus(invoice.status) && (
                       <PayInvoiceButton
                         invoiceId={invoice.id}
                         className="rounded-md px-2 py-1 text-xs"
@@ -152,7 +153,7 @@ export default function InvoicesTable({
                   </td>
                   <td className="whitespace-nowrap px-4 py-5 text-center">
                     <div className="flex justify-center gap-3">
-                      {invoice.status !== 'paid' && (
+                      {canPayInvoiceStatus(invoice.status) && (
                         <PayInvoiceButton
                           invoiceId={invoice.id}
                           className="rounded-md px-2 py-1 text-xs"

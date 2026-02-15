@@ -10,6 +10,8 @@ type PayTokenVerificationResult =
   | { ok: true; payload: PayLinkPayload }
   | { ok: false; reason: 'invalid' | 'expired' };
 
+const DEV_DEFAULT_PAY_LINK_TTL_SECONDS = 90 * 24 * 60 * 60;
+
 function getPayLinkSecret() {
   const secret = process.env.PAY_LINK_SECRET;
   if (!secret) {
@@ -51,20 +53,28 @@ function signPayload(encoded: string) {
 
 function getPayLinkTtlSeconds() {
   const raw = process.env.PAY_LINK_TTL_SECONDS;
-  if (!raw) return null;
+  if (!raw) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Missing PAY_LINK_TTL_SECONDS in production');
+    }
+    return DEV_DEFAULT_PAY_LINK_TTL_SECONDS;
+  }
+
   const ttlSeconds = Number(raw);
-  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return null;
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Invalid PAY_LINK_TTL_SECONDS in production');
+    }
+    return DEV_DEFAULT_PAY_LINK_TTL_SECONDS;
+  }
+
   return Math.floor(ttlSeconds);
 }
 
 export function generatePayToken(invoiceId: string) {
   const iat = Math.floor(Date.now() / 1000);
   const ttlSeconds = getPayLinkTtlSeconds();
-  const payload: PayLinkPayload = { invoiceId, iat };
-
-  if (ttlSeconds !== null) {
-    payload.exp = iat + ttlSeconds;
-  }
+  const payload: PayLinkPayload = { invoiceId, iat, exp: iat + ttlSeconds };
 
   const encoded = encodePayload(payload);
   const signature = signPayload(encoded);
@@ -91,21 +101,17 @@ export function verifyPayToken(token: string): PayTokenVerificationResult {
     return { ok: false, reason: 'invalid' };
   }
 
-  const ttlSeconds = getPayLinkTtlSeconds();
-  if (ttlSeconds !== null) {
-    const now = Math.floor(Date.now() / 1000);
-    const exp = payload.exp;
+  const now = Math.floor(Date.now() / 1000);
+  const exp = payload.exp;
 
-    if (typeof exp !== 'number' || now > exp) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[pay-link] token expired', {
-          now,
-          exp: exp ?? null,
-          ttlSeconds,
-        });
-      }
-      return { ok: false, reason: 'expired' };
+  if (typeof exp !== 'number' || now > exp) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[pay-link] token expired', {
+        now,
+        exp: exp ?? null,
+      });
     }
+    return { ok: false, reason: 'expired' };
   }
 
   return { ok: true, payload };
@@ -114,4 +120,9 @@ export function verifyPayToken(token: string): PayTokenVerificationResult {
 export function generatePayLink(baseUrl: string, invoiceId: string) {
   const token = generatePayToken(invoiceId);
   return `${baseUrl}/pay/${token}`;
+}
+
+// Fail fast during startup in production if TTL is not configured correctly.
+if (process.env.NODE_ENV === 'production') {
+  getPayLinkTtlSeconds();
 }

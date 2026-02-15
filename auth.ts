@@ -173,6 +173,8 @@ function PostgresAuthAdapter(): Adapter {
       const sessionState =
         typeof account.session_state === 'string' ? account.session_state : null;
 
+      // Security: a provider account binding must never be reassigned to another user.
+      // We insert once and keep ownership immutable on conflict.
       await sql`
         insert into nextauth_accounts (
           user_id,
@@ -201,15 +203,24 @@ function PostgresAuthAdapter(): Adapter {
           ${sessionState}
         )
         on conflict (provider, provider_account_id)
-        do update set
-          user_id = excluded.user_id,
-          access_token = excluded.access_token,
-          refresh_token = excluded.refresh_token,
-          expires_at = excluded.expires_at,
-          token_type = excluded.token_type,
-          scope = excluded.scope,
-          id_token = excluded.id_token,
-          session_state = excluded.session_state
+        do nothing
+      `;
+
+      // Security: refresh stored OAuth tokens only when the existing row belongs
+      // to the same user_id. This prevents cross-user provider-account rebinding.
+      await sql`
+        update nextauth_accounts
+        set
+          access_token = ${accessToken},
+          refresh_token = ${refreshToken},
+          expires_at = ${expiresAt},
+          token_type = ${tokenType},
+          scope = ${scope},
+          id_token = ${idToken},
+          session_state = ${sessionState}
+        where provider = ${account.provider}
+          and provider_account_id = ${account.providerAccountId}
+          and user_id = ${account.userId}
       `;
       return account;
     },
@@ -351,6 +362,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: false,
       authorization: {
         params: {
           prompt: 'select_account consent',
@@ -367,6 +379,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: false,
       authorization: {
         params: {
           prompt: 'login',

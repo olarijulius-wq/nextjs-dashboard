@@ -13,6 +13,7 @@ type LoginPageProps = {
     signup?: string;
     verified?: string;
     reset?: string;
+    error?: string;
   }>;
 };
 
@@ -22,6 +23,7 @@ export default async function LoginPage(props: LoginPageProps) {
   const verifiedSuccess = searchParams?.verified === 'success';
   const verifiedAlready = searchParams?.verified === 'already';
   const resetSuccess = searchParams?.reset === 'success';
+  const oauthAccountNotLinked = searchParams?.error === 'OAuthAccountNotLinked';
   const googleEnabled = Boolean(
     process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
   );
@@ -63,6 +65,12 @@ export default async function LoginPage(props: LoginPageProps) {
         {resetSuccess && (
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
             Your password has been reset. You can now log in.
+          </div>
+        )}
+        {oauthAccountNotLinked && (
+          <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+            Account exists. Please log in with email/password first, then connect
+            Google/GitHub from Settings.
           </div>
         )}
         <Suspense>

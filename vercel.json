@@ -1,9 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/reminders/run",
+      "path": "/api/reminders/run?triggeredBy=cron",
       "schedule": "0 7 * * *"
     }
   ]
 }
-

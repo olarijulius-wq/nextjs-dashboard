@@ -86,14 +86,29 @@ function getBaseUrl() {
   );
 }
 
+// Local smoke tests:
+// curl -i -H "Authorization: Bearer $REMINDER_CRON_TOKEN" http://localhost:3000/api/reminders/run?dryRun=1
+// curl -i -H "x-reminder-cron-token: $REMINDER_CRON_TOKEN" http://localhost:3000/api/reminders/run?dryRun=1
 function getCronAuthToken(req: Request) {
+  const authorization = req.headers.get('authorization')?.trim() ?? '';
+  if (authorization.toLowerCase().startsWith('bearer ')) {
+    const bearerToken = authorization.slice(7).trim();
+    if (bearerToken) {
+      return bearerToken;
+    }
+  }
+
   const headerToken = req.headers.get('x-reminder-cron-token')?.trim();
   if (headerToken) {
     return headerToken;
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+
   const url = new URL(req.url);
-  return url.searchParams.get('token');
+  return url.searchParams.get('token')?.trim() ?? null;
 }
 
 async function authorizeRunRequest(req: Request) {

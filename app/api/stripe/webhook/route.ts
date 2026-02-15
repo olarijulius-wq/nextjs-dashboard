@@ -10,6 +10,7 @@ import {
   planFromStripePriceId,
   isActiveSubscription,
 } from "@/app/lib/config";
+import { allowedPayStatuses, canPayInvoiceStatus } from "@/app/lib/invoice-status";
 import { stripe } from "@/app/lib/stripe";
 
 export const runtime = "nodejs";
@@ -625,6 +626,7 @@ async function markInvoicePaid({
   eventAccount?: string | null;
   eventType: string;
 }): Promise<number> {
+  const previousStatus = await findInvoiceStatusById(invoiceId);
   const updated = await sql`
     update invoices
     set
@@ -633,6 +635,7 @@ async function markInvoicePaid({
       stripe_payment_intent_id = coalesce(stripe_payment_intent_id, ${paymentIntentId ?? null}),
       stripe_checkout_session_id = coalesce(stripe_checkout_session_id, ${checkoutSessionId ?? null})
     where id = ${invoiceId}
+      and status = any(${sql.array([...allowedPayStatuses])})
     returning id, status, paid_at, stripe_payment_intent_id, stripe_checkout_session_id
   `;
 
@@ -649,6 +652,12 @@ async function markInvoicePaid({
   });
 
   if (rowCount === 0) {
+    const skipReason =
+      previousStatus === null
+        ? "invoice not found"
+        : canPayInvoiceStatus(previousStatus)
+          ? "no payable transition applied"
+          : `status "${previousStatus}" is not payable`;
     debugLog("[stripe webhook] invoice update affected 0 rows", {
       eventType,
       eventId,
@@ -656,6 +665,8 @@ async function markInvoicePaid({
       invoiceId,
       checkoutSessionId: checkoutSessionId ?? null,
       paymentIntentId: paymentIntentId ?? null,
+      previousStatus,
+      reason: skipReason,
     });
   }
 
@@ -1432,14 +1443,26 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     });
     if (!isValid) return;
 
-    const updated = await sql`
-      update invoices
-      set status = ${targetStatus}
-      where id = ${invoiceId}
-        and status = 'disputed'
-      returning id, status, paid_at
-    `;
-    invoiceUpdateRows = updated.length;
+    let updated: { id: string; status: string; paid_at: Date | null }[] = [];
+    if (targetStatus === "paid") {
+      invoiceUpdateRows = await markInvoicePaid({
+        invoiceId,
+        paymentIntentId,
+        checkoutSessionId,
+        eventId: event.id,
+        eventAccount: event.account ?? null,
+        eventType: event.type,
+      });
+    } else {
+      updated = await sql`
+        update invoices
+        set status = ${targetStatus}
+        where id = ${invoiceId}
+          and status = 'disputed'
+        returning id, status, paid_at
+      `;
+      invoiceUpdateRows = updated.length;
+    }
     debugLog("[stripe webhook] invoice resolution", {
       eventType: event.type,
       eventId: event.id,
@@ -1459,7 +1482,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       invoiceId,
       disputeId: dispute.id,
       targetStatus,
-      rows: updated.length,
+      rows: invoiceUpdateRows,
       invoice: updated[0] ?? null,
     });
   }

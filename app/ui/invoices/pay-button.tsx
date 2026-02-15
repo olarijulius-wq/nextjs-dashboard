@@ -5,6 +5,7 @@ import clsx from 'clsx';
 
 type PayInvoiceButtonProps = {
   invoiceId: string;
+  disabled?: boolean;
   className?: string;
 };
 
@@ -18,6 +19,7 @@ type StartPaymentResponse = {
 
 export default function PayInvoiceButton({
   invoiceId,
+  disabled = false,
   className,
 }: PayInvoiceButtonProps) {
   const payNowButtonClasses =
@@ -27,7 +29,7 @@ export default function PayInvoiceButton({
   const [actionUrl, setActionUrl] = useState<string | null>(null);
 
   async function handleClick() {
-    if (isLoading) return;
+    if (isLoading || disabled) return;
     setIsLoading(true);
     setErrorMessage(null);
     setActionUrl(null);
@@ -71,7 +73,7 @@ export default function PayInvoiceButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={isLoading}
+        disabled={disabled || isLoading}
         className={clsx(payNowButtonClasses, className)}
       >
         {isLoading ? 'Redirecting...' : 'Pay now'}

@@ -3,6 +3,7 @@ import postgres from 'postgres';
 import { auth } from '@/auth';
 import { createInvoiceCheckoutSession } from '@/app/lib/invoice-checkout';
 import { fetchStripeConnectStatusForUser } from '@/app/lib/data';
+import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import {
   checkConnectedAccountAccess,
   CONNECT_MODE_MISMATCH_MESSAGE,
@@ -58,8 +59,15 @@ export async function POST(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
   }
 
-  if (invoice.status === 'paid') {
-    return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 });
+  if (!canPayInvoiceStatus(invoice.status)) {
+    return NextResponse.json(
+      {
+        error: 'Invoice status does not allow payment',
+        code: 'INVOICE_STATUS_NOT_PAYABLE',
+        status: invoice.status,
+      },
+      { status: 409 },
+    );
   }
 
   const baseUrl =

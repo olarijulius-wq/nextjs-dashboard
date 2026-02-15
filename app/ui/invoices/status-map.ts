@@ -10,6 +10,10 @@ export const KNOWN_INVOICE_STATUSES = [
   'partially_refunded',
   'disputed',
   'failed',
+  'lost',
+  'void',
+  'cancelled',
+  'canceled',
 ] as const;
 
 export type KnownInvoiceStatus = (typeof KNOWN_INVOICE_STATUSES)[number];
@@ -64,6 +68,26 @@ const STATUS_DISPLAY: Record<KnownInvoiceStatus, StatusDisplay> = {
     label: 'Failed',
     className:
       'border-rose-700 bg-rose-700 text-white dark:border-rose-600/30 dark:bg-rose-600/15 dark:text-rose-200',
+  },
+  lost: {
+    label: 'Lost',
+    className:
+      'border-zinc-700 bg-zinc-700 text-white dark:border-zinc-600/30 dark:bg-zinc-600/15 dark:text-zinc-200',
+  },
+  void: {
+    label: 'Void',
+    className:
+      'border-zinc-500 bg-zinc-500 text-white dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-200',
+  },
+  cancelled: {
+    label: 'Cancelled',
+    className:
+      'border-zinc-500 bg-zinc-500 text-white dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-200',
+  },
+  canceled: {
+    label: 'Canceled',
+    className:
+      'border-zinc-500 bg-zinc-500 text-white dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-200',
   },
 };
 

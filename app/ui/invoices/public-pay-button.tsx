@@ -5,11 +5,13 @@ import { useState } from 'react';
 
 type PublicPayButtonProps = {
   token: string;
+  disabled?: boolean;
   className?: string;
 };
 
 export default function PublicPayButton({
   token,
+  disabled = false,
   className,
 }: PublicPayButtonProps) {
   const payNowButtonClasses =
@@ -17,7 +19,7 @@ export default function PublicPayButton({
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleClick() {
-    if (isLoading) return;
+    if (isLoading || disabled) return;
     setIsLoading(true);
 
     try {
@@ -46,7 +48,7 @@ export default function PublicPayButton({
     <button
       type="button"
       onClick={handleClick}
-      disabled={isLoading}
+      disabled={disabled || isLoading}
       className={clsx(payNowButtonClasses, className)}
     >
       {isLoading ? 'Redirecting...' : 'Pay now'}

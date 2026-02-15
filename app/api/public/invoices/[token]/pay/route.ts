@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import postgres from 'postgres';
 import { createInvoiceCheckoutSession } from '@/app/lib/invoice-checkout';
+import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { verifyPayToken } from '@/app/lib/pay-link';
 import { fetchStripeConnectStatusForUser } from '@/app/lib/data';
 import {
@@ -59,8 +60,15 @@ export async function POST(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
   }
 
-  if (invoice.status === 'paid') {
-    return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 });
+  if (!canPayInvoiceStatus(invoice.status)) {
+    return NextResponse.json(
+      {
+        error: 'Invoice status does not allow payment',
+        code: 'INVOICE_STATUS_NOT_PAYABLE',
+        status: invoice.status,
+      },
+      { status: 409 },
+    );
   }
 
   const baseUrl =
