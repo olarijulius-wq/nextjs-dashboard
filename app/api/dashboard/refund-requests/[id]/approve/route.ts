@@ -33,6 +33,74 @@ function readChargeId(
   return typeof latestCharge.id === 'string' ? latestCharge.id : null;
 }
 
+function isChargeAlreadyRefundedError(error: unknown): boolean {
+  const stripeError = error as {
+    code?: string;
+    raw?: { code?: string };
+    message?: string;
+  } | null;
+  const code = stripeError?.code ?? stripeError?.raw?.code ?? null;
+  const message = stripeError?.message ?? '';
+
+  return code === 'charge_already_refunded' || /already refunded/i.test(message);
+}
+
+type ChargeRefundSnapshot = {
+  amount: number;
+  amountRefunded: number;
+  currency: string | null;
+  latestRefundId: string | null;
+};
+
+function readChargeRefundSnapshot(charge: {
+  amount?: unknown;
+  amount_refunded?: unknown;
+  currency?: unknown;
+  refunds?:
+    | {
+        data?: Array<{ id?: unknown; created?: unknown; amount?: unknown }>;
+      }
+    | null;
+}): ChargeRefundSnapshot {
+  const amount = typeof charge.amount === 'number' ? charge.amount : 0;
+  const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
+
+  const refundsWithIds = refunds
+    .map((item) => ({
+      id: typeof item.id === 'string' ? item.id : null,
+      created: typeof item.created === 'number' ? item.created : null,
+      amount: typeof item.amount === 'number' ? item.amount : 0,
+    }))
+    .filter((item): item is { id: string; created: number | null; amount: number } =>
+      Boolean(item.id),
+    );
+
+  const sortedRefunds = [...refundsWithIds].sort((a, b) => {
+    const aCreated = a.created ?? 0;
+    const bCreated = b.created ?? 0;
+    return bCreated - aCreated;
+  });
+
+  const summedRefundAmount = refundsWithIds.reduce(
+    (sum, refund) => sum + refund.amount,
+    0,
+  );
+
+  const amountRefunded =
+    typeof charge.amount_refunded === 'number'
+      ? charge.amount_refunded
+      : summedRefundAmount;
+  const currency = typeof charge.currency === 'string' ? charge.currency : null;
+  const latestRefundId = sortedRefunds[0]?.id ?? null;
+
+  return {
+    amount,
+    amountRefunded,
+    currency,
+    latestRefundId,
+  };
+}
+
 export async function POST(
   _request: Request,
   props: { params: Promise<{ id: string }> },
@@ -90,12 +158,20 @@ export async function POST(
 
     if (row.status !== 'pending') {
       return NextResponse.json(
-        { ok: false, message: 'Refund request is no longer pending.' },
+        {
+          ok: false,
+          code: 'REFUND_REQUEST_ALREADY_RESOLVED',
+          message: `Refund request is already ${row.status}.`,
+        },
         { status: 409 },
       );
     }
 
-    if (row.invoice_status !== 'paid') {
+    if (
+      row.invoice_status !== 'paid' &&
+      row.invoice_status !== 'partially_refunded' &&
+      row.invoice_status !== 'refunded'
+    ) {
       return NextResponse.json(
         { ok: false, message: 'Only paid invoices can be refunded from this action.' },
         { status: 409 },
@@ -136,27 +212,91 @@ export async function POST(
       );
     }
 
-    const refund = await stripe.refunds.create(
-      { charge: chargeId },
-      {
-        stripeAccount,
-        idempotencyKey: `refund_request_${row.id}`,
-      },
+    let alreadyRefunded = false;
+    let resolvedStripeRefundId: string | null = null;
+
+    try {
+      const refund = await stripe.refunds.create(
+        { charge: chargeId },
+        {
+          stripeAccount,
+          idempotencyKey: `refund_request_${row.id}`,
+        },
+      );
+      resolvedStripeRefundId = refund.id;
+    } catch (error) {
+      if (!isChargeAlreadyRefundedError(error)) {
+        throw error;
+      }
+      alreadyRefunded = true;
+      console.warn(
+        '[refund approve] charge already refunded, marking request approved with ids',
+        {
+          requestId: row.id,
+          invoiceId: row.invoice_id,
+          chargeId,
+          stripeAccount,
+        },
+      );
+    }
+
+    const charge = await stripe.charges.retrieve(
+      chargeId,
+      { expand: ['refunds'] },
+      { stripeAccount },
     );
+    const chargeSnapshot = readChargeRefundSnapshot(charge);
+    const effectiveStripeRefundId =
+      resolvedStripeRefundId ?? chargeSnapshot.latestRefundId;
 
-    const updated = await sql<{ id: string }[]>`
-      update public.refund_requests
-      set
-        status = 'approved',
-        resolved_at = now(),
-        resolved_by_user_email = ${context.userEmail},
-        stripe_refund_id = ${refund.id}
-      where id = ${row.id}
-        and status = 'pending'
-      returning id
-    `;
+    const isPartialRefund =
+      chargeSnapshot.amount > 0 &&
+      chargeSnapshot.amountRefunded > 0 &&
+      chargeSnapshot.amountRefunded < chargeSnapshot.amount;
+    const targetInvoiceStatus = isPartialRefund
+      ? 'partially_refunded'
+      : 'refunded';
 
-    if (updated.length === 0) {
+    const approvalResult = await sql.begin(async (tx) => {
+      const updated = (await tx.unsafe(
+        `
+        update public.refund_requests
+        set
+          status = 'approved',
+          resolved_at = now(),
+          resolved_by_user_email = $1,
+          stripe_refund_id = $2
+        where id = $3
+          and status = 'pending'
+        returning id
+        `,
+        [context.userEmail, effectiveStripeRefundId, row.id],
+      )) as { id: string }[];
+
+      if (updated.length === 0) {
+        return { ok: false as const };
+      }
+
+      await tx.unsafe(
+        `
+        update public.invoices
+        set
+          status = case
+            when status = 'refunded' then 'refunded'
+            when $1 = 'refunded' then 'refunded'
+            else 'partially_refunded'
+          end,
+          refunded_at = coalesce(refunded_at, now())
+        where id = $2
+          and status in ('paid', 'partially_refunded', 'refunded')
+        `,
+        [targetInvoiceStatus, row.invoice_id],
+      );
+
+      return { ok: true as const };
+    });
+
+    if (!approvalResult.ok) {
       return NextResponse.json(
         { ok: false, message: 'Refund request is no longer pending.' },
         { status: 409 },
@@ -166,11 +306,23 @@ export async function POST(
     debugLog('[refund request] approved', {
       requestId: row.id,
       invoiceId: row.invoice_id,
-      stripeRefundId: refund.id,
+      stripeRefundId: effectiveStripeRefundId,
+      alreadyRefunded,
+      chargeAmount: chargeSnapshot.amount,
+      chargeAmountRefunded: chargeSnapshot.amountRefunded,
+      chargeCurrency: chargeSnapshot.currency,
       stripeAccount,
     });
 
-    return NextResponse.json({ ok: true, stripeRefundId: refund.id });
+    if (alreadyRefunded) {
+      return NextResponse.json({
+        ok: true,
+        alreadyRefunded: true,
+        stripeRefundId: effectiveStripeRefundId,
+      });
+    }
+
+    return NextResponse.json({ ok: true, stripeRefundId: effectiveStripeRefundId });
   } catch (error) {
     if (isTeamMigrationRequiredError(error)) {
       return NextResponse.json(
