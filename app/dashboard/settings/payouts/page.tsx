@@ -3,6 +3,7 @@ import {
   fetchStripeConnectStatusForUser,
   requireUserEmail,
 } from '@/app/lib/data';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import ConnectStripeButton from '../connect-stripe-button';
 import { primaryButtonClasses } from '@/app/ui/button';
 import ResyncConnectStatusButton from './resync-connect-status-button';
@@ -14,12 +15,16 @@ export const metadata: Metadata = {
 
 export default async function PayoutsPage() {
   const email = await requireUserEmail();
+  const context = await ensureWorkspaceContextForCurrentUser();
+  const userRole = context.userRole;
   const status = await fetchStripeConnectStatusForUser(email);
   const isTest = process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') ?? false;
   const modeLabel = isTest ? 'Test' : 'Live';
-  let retrieveStatus = 'not checked';
+  const showStripeDebug =
+    process.env.DEBUG_STRIPE_UI === 'true' && userRole === 'owner';
+  let retrieveStatus: string | null = null;
 
-  if (status.accountId) {
+  if (showStripeDebug && status.accountId) {
     const accessCheck = await checkConnectedAccountAccess(status.accountId);
     retrieveStatus = accessCheck.ok
       ? 'ok'
@@ -53,15 +58,15 @@ export default async function PayoutsPage() {
 
       {!status.hasAccount ? (
         <div className="space-y-4">
-          {process.env.NODE_ENV !== 'production' ? (
+          {showStripeDebug && (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
               <p>
                 <strong>Debug</strong> Key mode: {modeLabel.toLowerCase()}
               </p>
               <p>Connected account: {status.accountId ?? 'none'}</p>
-              <p>accounts.retrieve: {retrieveStatus}</p>
+              <p>accounts.retrieve: {retrieveStatus ?? 'not checked'}</p>
             </div>
-          ) : null}
+          )}
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_16px_30px_rgba(0,0,0,0.45)]">
             <div className="mb-3">
               <span
@@ -78,15 +83,15 @@ export default async function PayoutsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {process.env.NODE_ENV !== 'production' ? (
+          {showStripeDebug && (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
               <p>
                 <strong>Debug</strong> Key mode: {modeLabel.toLowerCase()}
               </p>
               <p>Connected account: {status.accountId ?? 'none'}</p>
-              <p>accounts.retrieve: {retrieveStatus}</p>
+              <p>accounts.retrieve: {retrieveStatus ?? 'not checked'}</p>
             </div>
-          ) : null}
+          )}
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_16px_30px_rgba(0,0,0,0.45)]">
             <div className="mb-3">
               <span
