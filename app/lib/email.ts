@@ -209,3 +209,58 @@ export async function sendWorkspaceInviteEmail(options: {
     throw new Error(`Resend failed: ${detail}`);
   }
 }
+
+export async function sendRefundRequestNotificationEmail(options: {
+  to: string;
+  invoiceLabel: string;
+  reason: string;
+  payerEmail: string | null;
+  refundsUrl: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('[refund request email stub]', options.to);
+    return;
+  }
+
+  const from = process.env.REMINDER_FROM_EMAIL ?? 'Invoicify <noreply@invoicify.dev>';
+  const subject = `Refund request for invoice ${options.invoiceLabel}`;
+  const payerLine = options.payerEmail ? `Payer email: ${options.payerEmail}` : 'Payer email: not provided';
+  const bodyHtml = `
+    <p>A new refund request was submitted for invoice <strong>${options.invoiceLabel}</strong>.</p>
+    <p>${payerLine}</p>
+    <p>Reason:</p>
+    <p>${options.reason}</p>
+    <p><a href="${options.refundsUrl}">Review refund requests</a></p>
+  `;
+  const bodyText = [
+    `A new refund request was submitted for invoice ${options.invoiceLabel}.`,
+    payerLine,
+    '',
+    'Reason:',
+    options.reason,
+    '',
+    `Review refund requests: ${options.refundsUrl}`,
+  ].join('\n');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: options.to,
+      subject,
+      html: bodyHtml,
+      text: bodyText,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Resend failed: ${detail}`);
+  }
+}

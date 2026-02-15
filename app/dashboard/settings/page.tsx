@@ -47,6 +47,11 @@ const settingCards = [
     href: '/dashboard/settings/documents',
     description: 'Document templates and storage configuration.',
   },
+  {
+    title: 'Refund requests',
+    href: '/dashboard/settings/refunds',
+    description: 'Review and process payer refund requests.',
+  },
 ];
 
 export default async function SettingsPage(props: {

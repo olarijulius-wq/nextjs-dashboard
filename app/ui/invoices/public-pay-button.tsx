@@ -13,7 +13,7 @@ export default function PublicPayButton({
   className,
 }: PublicPayButtonProps) {
   const payNowButtonClasses =
-    'inline-flex items-center justify-center rounded-xl border border-emerald-700 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition duration-200 ease-out hover:bg-emerald-700 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-emerald-400/40 dark:bg-black dark:text-emerald-300 dark:hover:bg-emerald-500/10 dark:focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-60';
+    'inline-flex items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-900 transition duration-200 ease-out hover:border-neutral-400 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/60 dark:focus-visible:ring-zinc-500/40 dark:focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-60';
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleClick() {

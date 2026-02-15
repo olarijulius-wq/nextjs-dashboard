@@ -19,6 +19,7 @@ const sections = [
   { name: 'Unsubscribe', href: '/dashboard/settings/unsubscribe' },
   { name: 'Documents', href: '/dashboard/settings/documents' },
   { name: 'Payouts', href: '/dashboard/settings/payouts' },
+  { name: 'Refunds', href: '/dashboard/settings/refunds' },
 ];
 
 export default function SettingsSectionsNav() {
