@@ -25,9 +25,8 @@ function getInitial(value: string) {
 export default async function SideNav() {
   const session = await auth();
   const userEmail = session?.user?.email ?? '';
-  const userName = session?.user?.name?.trim() || '';
-  const identityLabel = userName || userEmail || 'Account';
-  const avatarInitial = getInitial(userName || userEmail || '?');
+  const identityLabel = userEmail || 'Account';
+  const avatarInitial = getInitial(userEmail || '?');
   const logoutAction = async () => {
     'use server';
     await signOut({ redirectTo: '/' });
@@ -56,14 +55,9 @@ export default async function SideNav() {
                 {avatarInitial}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-neutral-900 dark:text-neutral-100">
+                <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   {identityLabel}
                 </p>
-                {userEmail ? (
-                  <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    {userEmail}
-                  </p>
-                ) : null}
               </div>
               <ChevronUpIcon className="h-4 w-4 text-neutral-500 transition group-open:rotate-180 dark:text-neutral-400" />
             </summary>
