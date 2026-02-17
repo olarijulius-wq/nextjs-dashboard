@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { ArrowRightIcon } from '@heroicons/react/20/solid';
+import Link from 'next/link';
 import { Button } from '@/app/ui/button';
 import { registerUser, SignupState } from '@/app/lib/actions';
 import SocialAuthButtons from '@/app/(auth)/_components/social-auth-buttons';
@@ -79,6 +80,34 @@ export default function SignupForm({ googleEnabled, githubEnabled }: SignupFormP
           onChange={(event) => setPassword(event.target.value)}
         />
         {state.errors?.password?.map((e) => (
+          <p key={e} className="mt-2 text-sm text-red-400">{e}</p>
+        ))}
+      </div>
+
+      <div>
+        <label className="flex items-start gap-3 text-sm text-white/80">
+          <input
+            name="termsAccepted"
+            type="checkbox"
+            required
+            className="mt-1 h-4 w-4 rounded border border-white/20 bg-white/5 text-white focus:ring-2 focus:ring-white/30"
+          />
+          <span>
+            I agree to the{' '}
+            <Link href="/legal/terms" className="text-white underline underline-offset-4">
+              Terms
+            </Link>{' '}
+            and acknowledge the{' '}
+            <Link
+              href="/legal/privacy"
+              className="text-white underline underline-offset-4"
+            >
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+        {state.errors?.termsAccepted?.map((e) => (
           <p key={e} className="mt-2 text-sm text-red-400">{e}</p>
         ))}
       </div>

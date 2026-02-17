@@ -278,8 +278,17 @@ await sendReminderEmail({ payLink });`}
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-neutral-400 md:flex-row md:items-center md:justify-between">
           <p>Lateless - get paid faster, automatically.</p>
           <div className="flex flex-wrap items-center gap-4">
+            <Link href="/legal/privacy" className="transition hover:text-white">
+              Privacy
+            </Link>
+            <Link href="/legal/terms" className="transition hover:text-white">
+              Terms
+            </Link>
+            <Link href="/legal/cookies" className="transition hover:text-white">
+              Cookies
+            </Link>
             <a href="#pricing" className="transition hover:text-white">
-              Docs
+              Pricing
             </a>
             <a href="#security" className="transition hover:text-white">
               Security

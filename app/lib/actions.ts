@@ -799,10 +799,20 @@ const SignupSchema = z.object({
   name: z.string().min(1, { message: 'Please enter your name.' }),
   email: z.string().email({ message: 'Please enter a valid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({
+      message: 'You must agree to the Terms and acknowledge the Privacy Policy.',
+    }),
+  }),
 });
 
 export type SignupState = {
-  errors?: { name?: string[]; email?: string[]; password?: string[] };
+  errors?: {
+    name?: string[];
+    email?: string[];
+    password?: string[];
+    termsAccepted?: string[];
+  };
   message?: string | null;
 };
 
@@ -811,6 +821,7 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
     name: formData.get('name'),
     email: formData.get('email'),
     password: formData.get('password'),
+    termsAccepted: formData.get('termsAccepted') === 'on',
   });
 
   if (!validated.success) {

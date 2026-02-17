@@ -3,6 +3,7 @@
 // stripe payment_intents create --amount 50 --currency eur --payment-method pm_card_visa --confirm true --metadata invoiceId=<invoice_id> --stripe-account <acct_id>
 // Confirm the invoice stays pending when amount/currency does not match.
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import type Stripe from "stripe";
 import postgres from "postgres";
 import {
@@ -69,6 +70,11 @@ function readPaymentIntentId(
 function stringifyErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   return raw.length > 2000 ? raw.slice(0, 2000) : raw;
+}
+
+function revalidateInvoicePaths(invoiceId: string) {
+  revalidatePath(`/dashboard/invoices/${invoiceId}`);
+  revalidatePath("/dashboard/invoices");
 }
 
 async function findInvoiceIdByCheckoutSessionId(
@@ -710,6 +716,10 @@ async function markInvoicePaid({
     });
   }
 
+  if (rowCount > 0) {
+    revalidateInvoicePaths(invoiceId);
+  }
+
   return rowCount;
 }
 
@@ -817,6 +827,10 @@ async function updateInvoiceActualFeeDetailsFromCharge({
     rows: updated.length,
     invoice: updated[0] ?? null,
   });
+
+  if (updated.length > 0) {
+    revalidateInvoicePaths(invoiceId);
+  }
 }
 
 async function processEvent(event: Stripe.Event): Promise<void> {
@@ -1244,7 +1258,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     });
     if (!isValid) return;
 
-    await markInvoicePaid({
+    resolvedInvoiceId = invoiceId;
+    invoiceUpdateRows = await markInvoicePaid({
       invoiceId,
       paymentIntentId,
       checkoutSessionId,
@@ -1678,6 +1693,10 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     resolvedInvoiceId: resolvedInvoiceId ?? "none",
     updateRows: invoiceUpdateRows,
   });
+
+  if (resolvedInvoiceId && invoiceUpdateRows > 0) {
+    revalidateInvoicePaths(resolvedInvoiceId);
+  }
 }
 
 export async function POST(req: Request) {
