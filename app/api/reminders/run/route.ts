@@ -24,6 +24,7 @@ import {
   insertReminderRunLog,
   isReminderRunLogsMigrationRequiredError,
 } from '@/app/lib/reminder-run-logs';
+import { logFunnelEvent } from '@/app/lib/funnel-events';
 import { auth } from '@/auth';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 
@@ -435,6 +436,7 @@ async function runReminderJob(req: Request) {
   const errors: RunErrorItem[] = [];
   const eligibleReminders: ReminderCandidate[] = [];
   const seenInvoiceIds = new Set<string>();
+  const sentByUser = new Map<string, number>();
 
   if (reminders.length === 0) {
     console.log('No reminders to send (either none overdue or owners not verified).');
@@ -623,6 +625,11 @@ async function runReminderJob(req: Request) {
         `;
 
         updatedInvoiceIds.push(reminder.id);
+        const normalizedUserEmail = reminder.user_email.trim().toLowerCase();
+        sentByUser.set(
+          normalizedUserEmail,
+          (sentByUser.get(normalizedUserEmail) ?? 0) + 1,
+        );
         if (workspaceAccumulator) {
           workspaceAccumulator.sentCount += 1;
         }
@@ -712,6 +719,19 @@ async function runReminderJob(req: Request) {
   );
 
   const hasMore = run.hasMore || hasMoreFromSelection;
+
+  if (!dryRun && sentByUser.size > 0) {
+    await Promise.all(
+      Array.from(sentByUser.entries()).map(([userEmail, sentCountForUser]) =>
+        logFunnelEvent({
+          userEmail,
+          eventName: 'first_reminder_sent',
+          source: 'nudge',
+          meta: { sentCount: sentCountForUser, triggeredBy },
+        }),
+      ),
+    );
+  }
 
   const responsePayload = {
     ranAt: ranAtIso,

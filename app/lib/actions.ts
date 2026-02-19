@@ -17,6 +17,7 @@ import {
   sendTwoFactorCodeEmail,
 } from '@/app/lib/email';
 import { initialLoginState, type LoginState } from '@/app/lib/login-state';
+import { logFunnelEvent } from '@/app/lib/funnel-events';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -444,6 +445,13 @@ export async function createInvoice(
         message: 'Database error. Failed to create invoice.',
       };
     }
+
+    await logFunnelEvent({
+      userEmail,
+      eventName: 'invoice_created',
+      source: 'dashboard',
+      meta: { invoiceId },
+    });
   } catch {
     return {
       ok: false,
@@ -729,6 +737,13 @@ export async function createCustomer(
       INSERT INTO customers (name, email, user_email)
       VALUES (${name}, ${email}, ${userEmail})
     `;
+
+    await logFunnelEvent({
+      userEmail,
+      eventName: 'customer_created',
+      source: 'dashboard',
+      meta: { customerEmail: normalizeEmail(email) },
+    });
   } catch {
     return { message: 'Database Error: Failed to Create Customer.' };
   }
@@ -854,6 +869,12 @@ export async function saveCompanyProfile(
       logo_url: validated.data.logoUrl ?? null,
     });
 
+    await logFunnelEvent({
+      userEmail: await requireUserEmail(),
+      eventName: 'company_saved',
+      source: 'dashboard',
+    });
+
     revalidatePath('/dashboard/settings');
 
     return {
@@ -947,6 +968,13 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
     } catch (error) {
       console.error('Email verification setup failed:', error);
     }
+
+    await logFunnelEvent({
+      userEmail: normalizedEmail,
+      eventName: 'signup_completed',
+      source: 'signup',
+      meta: { userId },
+    });
   }
 
   const callbackUrlRaw = formData.get('callbackUrl');

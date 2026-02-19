@@ -9,6 +9,7 @@ import {
   normalizePlan,
   type PlanId,
 } from '@/app/lib/config';
+import { logFunnelEvent } from '@/app/lib/funnel-events';
 
 const checkoutParamsSchema = z.object({
   plan: z.string().trim().toLowerCase().optional(),
@@ -70,6 +71,13 @@ export async function POST(req: Request) {
       : 'http://localhost:3000');
 
   try {
+    await logFunnelEvent({
+      userEmail: normalizedEmail,
+      eventName: 'checkout_started',
+      source: 'billing',
+      meta: { plan, interval },
+    });
+
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],

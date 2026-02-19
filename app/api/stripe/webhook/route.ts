@@ -12,6 +12,7 @@ import {
   isActiveSubscription,
 } from "@/app/lib/config";
 import { allowedPayStatuses, canPayInvoiceStatus } from "@/app/lib/invoice-status";
+import { logFunnelEvent } from "@/app/lib/funnel-events";
 import { stripe } from "@/app/lib/stripe";
 
 export const runtime = "nodejs";
@@ -875,6 +876,25 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           updated.length,
           updated[0],
         );
+
+        if (updated.length > 0) {
+          await Promise.all(
+            updated
+              .filter(
+                (row) =>
+                  typeof row.email === "string" &&
+                  row.email.trim() &&
+                  row.subscription_status === "active",
+              )
+              .map((row) =>
+                logFunnelEvent({
+                  userEmail: row.email,
+                  eventName: "subscription_active",
+                  source: "billing",
+                }),
+              ),
+          );
+        }
       } else if (email) {
         const updated = await sql`
           update public.users
@@ -894,6 +914,25 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           updated.length,
           updated[0],
         );
+
+        if (updated.length > 0) {
+          await Promise.all(
+            updated
+              .filter(
+                (row) =>
+                  typeof row.email === "string" &&
+                  row.email.trim() &&
+                  row.subscription_status === "active",
+              )
+              .map((row) =>
+                logFunnelEvent({
+                  userEmail: row.email,
+                  eventName: "subscription_active",
+                  source: "billing",
+                }),
+              ),
+          );
+        }
       } else {
         debugLog(
           "checkout.session.completed -> no userId and no email found in session",
@@ -1007,6 +1046,20 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       user: updated[0] ?? null,
     });
 
+    if (status === "active" && updated.length > 0) {
+      await Promise.all(
+        updated
+          .filter((row) => typeof row.email === "string" && row.email.trim())
+          .map((row) =>
+            logFunnelEvent({
+              userEmail: row.email,
+              eventName: "subscription_active",
+              source: "billing",
+            }),
+          ),
+      );
+    }
+
     if (updated.length === 0) {
       const metaUserId = (sub.metadata?.userId as string | undefined) || undefined;
       if (metaUserId) {
@@ -1028,6 +1081,20 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           rows: updated2.length,
           user: updated2[0] ?? null,
         });
+
+        if (status === "active" && updated2.length > 0) {
+          await Promise.all(
+            updated2
+              .filter((row) => typeof row.email === "string" && row.email.trim())
+              .map((row) =>
+                logFunnelEvent({
+                  userEmail: row.email,
+                  eventName: "subscription_active",
+                  source: "billing",
+                }),
+              ),
+          );
+        }
       }
     }
   }

@@ -24,12 +24,19 @@ const sections = [
   { name: 'Documents', href: '/dashboard/settings/documents' },
 ];
 
-export default function SettingsSectionsNav() {
+export default function SettingsSectionsNav({
+  canViewFunnel = false,
+}: {
+  canViewFunnel?: boolean;
+}) {
   const pathname = usePathname();
+  const resolvedSections = canViewFunnel
+    ? [...sections, { name: 'Funnel', href: '/dashboard/settings/funnel' }]
+    : sections;
 
   return (
     <div className="flex flex-wrap gap-2">
-      {sections.map((section) => {
+      {resolvedSections.map((section) => {
         const active = pathname === section.href;
         return (
           <Link

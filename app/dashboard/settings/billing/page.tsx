@@ -21,6 +21,7 @@ import IntervalToggle from '@/app/ui/pricing/interval-toggle';
 import PricingPanel from '@/app/ui/pricing/panel';
 import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
 import { CARD_INTERACTIVE } from '@/app/ui/theme/tokens';
+import { logFunnelEvent } from '@/app/lib/funnel-events';
 
 export const metadata: Metadata = {
   title: 'Billing Settings',
@@ -69,6 +70,12 @@ export default async function BillingSettingsPage(props: {
   const annualHref = `/dashboard/settings/billing?${nextAnnualParams.toString()}`;
 
   const userEmail = await requireUserEmail();
+  await logFunnelEvent({
+    userEmail,
+    eventName: 'billing_opened',
+    source: 'billing',
+  });
+
   const {
     plan,
     isPro,

@@ -49,6 +49,59 @@ function pickSummary(payload: RunNowResponse | null) {
   };
 }
 
+function getZeroSentExplanation(latestRun: ReminderRunLogRecord | null): string | null {
+  if (!latestRun || latestRun.sent > 0) {
+    return null;
+  }
+
+  const raw = latestRun.rawJson;
+  const candidates = Array.isArray(raw?.candidates) ? raw.candidates : [];
+  if (candidates.length === 0) {
+    return 'No overdue invoices eligible right now.';
+  }
+
+  const summary =
+    typeof raw?.summary === 'object' && raw.summary !== null
+      ? (raw.summary as Record<string, unknown>)
+      : null;
+  const skippedBreakdown =
+    summary &&
+    typeof summary.skippedBreakdown === 'object' &&
+    summary.skippedBreakdown !== null
+      ? (summary.skippedBreakdown as Record<string, unknown>)
+      : null;
+
+  const paused = Number(skippedBreakdown?.paused ?? 0);
+  const unsubscribed = Number(skippedBreakdown?.unsubscribed ?? 0);
+  const missingEmail = Number(skippedBreakdown?.missing_email ?? 0);
+  const notEligible = Number(skippedBreakdown?.not_eligible ?? 0);
+
+  if (notEligible > 0) {
+    return "Some invoices weren't eligible yet (due date rules).";
+  }
+
+  const reasons = [
+    { key: 'paused', count: paused, message: 'Some invoices were paused.' },
+    {
+      key: 'unsubscribed',
+      count: unsubscribed,
+      message: 'Some recipients were unsubscribed.',
+    },
+    {
+      key: 'missing_email',
+      count: missingEmail,
+      message: 'Some customers are missing email addresses.',
+    },
+  ].sort((a, b) => b.count - a.count);
+
+  const topReason = reasons[0];
+  if (topReason && topReason.count > 0) {
+    return topReason.message;
+  }
+
+  return null;
+}
+
 export default function RemindersAdminPanel({ runs }: RemindersAdminPanelProps) {
   const router = useRouter();
   const [isRunning, startTransition] = useTransition();
@@ -74,6 +127,7 @@ export default function RemindersAdminPanel({ runs }: RemindersAdminPanelProps) 
   }, [latestRun]);
 
   const latestRunNowSummary = pickSummary(runResult);
+  const zeroSentExplanation = getZeroSentExplanation(latestRun);
 
   const handleRunNow = () => {
     if (isRunning) {
@@ -118,6 +172,11 @@ export default function RemindersAdminPanel({ runs }: RemindersAdminPanelProps) 
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
               Manual trigger for `/api/reminders/run?triggeredBy=manual`.
             </p>
+            {zeroSentExplanation ? (
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                {zeroSentExplanation}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
