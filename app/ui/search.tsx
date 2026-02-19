@@ -3,28 +3,38 @@
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { useDebouncedCallback } from 'use-debounce';
-import { DARK_INPUT } from '@/app/ui/theme/tokens';
 import clsx from 'clsx';
+import { listControlsInputClasses } from '@/app/ui/list-controls/styles';
  
 type SearchProps = {
   placeholder: string;
   className?: string;
+  queryParam?: string;
+  pageParam?: string;
   onFocus?: React.FocusEventHandler<HTMLInputElement>;
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
 };
 
-export default function Search({ placeholder, className, onFocus, onBlur }: SearchProps) {
+export default function Search({
+  placeholder,
+  className,
+  queryParam = 'query',
+  pageParam = 'page',
+  onFocus,
+  onBlur,
+}: SearchProps) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
 
-  const handleSearch = useDebouncedCallback((term) => {
+  const handleSearch = useDebouncedCallback((term: string) => {
     const params = new URLSearchParams(searchParams);
-    params.set('page', '1');
-    if (term) {
-      params.set('query', term);
+    const normalized = term.trim();
+    params.set(pageParam, '1');
+    if (normalized) {
+      params.set(queryParam, normalized);
     } else {
-      params.delete('query');
+      params.delete(queryParam);
     }
     replace(`${pathname}?${params.toString()}`);
   }, 300);
@@ -35,16 +45,16 @@ export default function Search({ placeholder, className, onFocus, onBlur }: Sear
         Search
       </label>
       <input
-        className={`peer block w-full rounded-xl border border-slate-300 bg-white py-[9px] pl-10 text-sm text-slate-900 outline-none placeholder:text-slate-500 transition focus:border-slate-500 focus:ring-2 focus:ring-slate-500/40 ${DARK_INPUT}`}
+        className={clsx(listControlsInputClasses, 'peer block py-[9px] pl-10')}
         placeholder={placeholder}
         onFocus={onFocus}
         onBlur={onBlur}
         onChange={(e) => {
           handleSearch(e.target.value);
         }}
-        defaultValue={searchParams.get('query')?.toString()}
+        defaultValue={searchParams.get(queryParam)?.toString()}
       />
-      <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-500 transition peer-focus:text-slate-700 dark:peer-focus:text-zinc-300" />
+      <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-700 dark:peer-focus:text-neutral-300" />
     </div>
   );
 }

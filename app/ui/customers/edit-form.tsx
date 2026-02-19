@@ -16,7 +16,13 @@ const neutralSecondaryButtonClasses =
 const neutralPrimaryButtonClasses =
   'border border-black bg-black text-white hover:bg-neutral-900 hover:scale-100 focus-visible:ring-neutral-400 dark:border-white dark:bg-white dark:text-black dark:hover:bg-neutral-200 dark:focus-visible:ring-neutral-500';
 
-export default function Form({ customer }: { customer: CustomerForm }) {
+export default function Form({
+  customer,
+  returnTo,
+}: {
+  customer: CustomerForm;
+  returnTo?: string;
+}) {
   const initialState: CustomerState = { message: '', errors: {} };
   const updateCustomerWithId = updateCustomer.bind(null, customer.id);
   const [state, formAction] = useActionState(
@@ -28,6 +34,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
 
   return (
     <form action={formAction}>
+      <input type="hidden" name="returnTo" value={returnTo ?? ''} />
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] md:p-6 dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {/* Customer Name */}
         <div className="mb-4">
@@ -100,7 +107,7 @@ export default function Form({ customer }: { customer: CustomerForm }) {
 
       <div className="mt-6 flex justify-end gap-4">
         <Link
-          href="/dashboard/customers"
+          href={returnTo || '/dashboard/customers'}
           className={neutralSecondaryButtonClasses}
         >
           Cancel

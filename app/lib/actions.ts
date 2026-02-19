@@ -268,6 +268,48 @@ function buildPlanLimitMessage(plan: PlanId) {
   return `${config.name} plan limit reached (${limitLabel}). Upgrade your plan to create more invoices.`;
 }
 
+function sanitizeInvoicesReturnTo(returnToRaw: FormDataEntryValue | null): string {
+  if (typeof returnToRaw !== 'string') {
+    return '/dashboard/invoices';
+  }
+
+  const trimmed = returnToRaw.trim();
+  if (!trimmed.startsWith('/dashboard/invoices')) {
+    return '/dashboard/invoices';
+  }
+
+  try {
+    const parsed = new URL(trimmed, 'http://localhost');
+    if (!parsed.pathname.startsWith('/dashboard/invoices')) {
+      return '/dashboard/invoices';
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return '/dashboard/invoices';
+  }
+}
+
+function sanitizeCustomersReturnTo(returnToRaw: FormDataEntryValue | null): string {
+  if (typeof returnToRaw !== 'string') {
+    return '/dashboard/customers';
+  }
+
+  const trimmed = returnToRaw.trim();
+  if (!trimmed.startsWith('/dashboard/customers')) {
+    return '/dashboard/customers';
+  }
+
+  try {
+    const parsed = new URL(trimmed, 'http://localhost');
+    if (!parsed.pathname.startsWith('/dashboard/customers')) {
+      return '/dashboard/customers';
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return '/dashboard/customers';
+  }
+}
+
 const MAX_DAILY_INVOICES = 100;
 
 export async function createInvoice(
@@ -442,6 +484,7 @@ export async function updateInvoice(
 
   const { customerId, amount, status, dueDate } = validatedFields.data;
   const amountInCents = amount * 100;
+  const returnTo = sanitizeInvoicesReturnTo(formData.get('returnTo'));
 
   try {
     const updated = await sql`
@@ -469,7 +512,13 @@ export async function updateInvoice(
   }
 
   revalidatePath('/dashboard/invoices');
-  redirect('/dashboard/invoices');
+  revalidatePath(`/dashboard/invoices/${id}`);
+
+  const nextUrl = new URL(returnTo, 'http://localhost');
+  nextUrl.searchParams.set('updated', '1');
+  nextUrl.searchParams.set('updatedInvoice', id);
+  nextUrl.searchParams.set('highlight', id);
+  redirect(`${nextUrl.pathname}?${nextUrl.searchParams.toString()}`);
 }
 
 export async function updateInvoiceStatus(
@@ -713,6 +762,7 @@ export async function updateCustomer(
   }
 
   const { name, email } = validatedFields.data;
+  const returnTo = sanitizeCustomersReturnTo(formData.get('returnTo'));
 
   try {
     const updated = await sql`
@@ -733,7 +783,13 @@ export async function updateCustomer(
   }
 
   revalidatePath('/dashboard/customers');
-  redirect('/dashboard/customers');
+  revalidatePath(`/dashboard/customers/${id}`);
+
+  const nextUrl = new URL(returnTo, 'http://localhost');
+  nextUrl.searchParams.set('updated', '1');
+  nextUrl.searchParams.set('updatedCustomer', id);
+  nextUrl.searchParams.set('highlight', id);
+  redirect(`${nextUrl.pathname}?${nextUrl.searchParams.toString()}`);
 }
 
 export async function deleteCustomer(id: string) {

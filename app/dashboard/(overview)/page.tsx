@@ -17,8 +17,16 @@ export const metadata: Metadata = {
   title: 'Dashboard',
 };
  
-
-export default async function Page() {
+export default async function Page(props: {
+  searchParams?: Promise<{
+    lpQuery?: string;
+    lpPage?: string;
+    lpSort?: string;
+    lpDir?: string;
+    lpPageSize?: string;
+  }>;
+}) {
+  const searchParams = await props.searchParams;
   return (
     <main className="space-y-6">
       <h1 className={`${lusitana.className} text-xl text-slate-900 dark:text-slate-100 md:text-2xl`}>
@@ -56,7 +64,7 @@ export default async function Page() {
           </RevealOnMount>
           <RevealOnMount delay={0.2} className="h-full">
             <Suspense fallback={<LatestInvoicesSkeleton />}>
-              <LatePayers />
+              <LatePayers searchParams={searchParams} />
             </Suspense>
           </RevealOnMount>
         </div>

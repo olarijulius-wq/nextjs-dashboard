@@ -20,6 +20,10 @@ import {
   type ReminderRunSkippedBreakdown,
   type ReminderRunTriggeredBy,
 } from '@/app/lib/reminder-runs';
+import {
+  insertReminderRunLog,
+  isReminderRunLogsMigrationRequiredError,
+} from '@/app/lib/reminder-run-logs';
 import { auth } from '@/auth';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 
@@ -641,8 +645,8 @@ async function runReminderJob(req: Request) {
 
   const durationMs = Date.now() - startedAt;
 
-  let runLogWritten = false;
-  let runLogWarning: string | null = null;
+  let workspaceRunLogWritten = false;
+  let workspaceRunLogWarning: string | null = null;
   if (workspaceStats.size > 0) {
     try {
       await assertReminderRunsSchemaReady();
@@ -661,13 +665,13 @@ async function runReminderJob(req: Request) {
           }),
         ),
       );
-      runLogWritten = true;
+      workspaceRunLogWritten = true;
     } catch (error) {
       if (isReminderRunsMigrationRequiredError(error)) {
-        runLogWarning = 'REMINDER_RUNS_LOGGING_SKIPPED_MIGRATION_REQUIRED';
+        workspaceRunLogWarning = 'REMINDER_RUNS_LOGGING_SKIPPED_MIGRATION_REQUIRED';
       } else {
         console.error('Reminder run logging failed:', error);
-        runLogWarning = 'REMINDER_RUNS_LOGGING_SKIPPED';
+        workspaceRunLogWarning = 'REMINDER_RUNS_LOGGING_SKIPPED';
       }
     }
   }
@@ -709,7 +713,7 @@ async function runReminderJob(req: Request) {
 
   const hasMore = run.hasMore || hasMoreFromSelection;
 
-  return NextResponse.json({
+  const responsePayload = {
     ranAt: ranAtIso,
     attempted: run.attempted,
     sent: sentCount,
@@ -735,8 +739,41 @@ async function runReminderJob(req: Request) {
     },
     candidates: decisions,
     errors: errors.slice(-10),
+  };
+
+  let runLogWritten = false;
+  const runWarnings: string[] = [];
+
+  try {
+    await insertReminderRunLog({
+      triggeredBy: triggeredBy === 'cron' ? 'cron' : 'manual',
+      attempted: run.attempted,
+      sent: sentCount,
+      failed: run.failed,
+      skipped: skippedCount,
+      hasMore,
+      durationMs,
+      rawJson: responsePayload,
+      ranAt: ranAtIso,
+    });
+    runLogWritten = true;
+  } catch (error) {
+    if (isReminderRunLogsMigrationRequiredError(error)) {
+      runWarnings.push('REMINDER_RUN_LOGS_MIGRATION_REQUIRED');
+    } else {
+      console.error('Reminder run log write failed:', error);
+      runWarnings.push('REMINDER_RUN_LOGS_WRITE_FAILED');
+    }
+  }
+
+  if (!workspaceRunLogWritten && workspaceRunLogWarning) {
+    runWarnings.push(workspaceRunLogWarning);
+  }
+
+  return NextResponse.json({
+    ...responsePayload,
     runLogWritten,
-    runLogWarning,
+    runLogWarning: runWarnings.length > 0 ? runWarnings.join('; ') : null,
   });
 }
 

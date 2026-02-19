@@ -20,6 +20,7 @@ const sections = [
   { name: 'Company', href: '/dashboard/settings/company-profile' },
   { name: 'SMTP', href: '/dashboard/settings/smtp' },
   { name: 'Unsubscribe', href: '/dashboard/settings/unsubscribe' },
+  { name: 'Reminders', href: '/dashboard/settings/reminders' },
   { name: 'Documents', href: '/dashboard/settings/documents' },
 ];
 

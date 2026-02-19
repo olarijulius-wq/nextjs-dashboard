@@ -555,11 +555,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async jwt({ token, user }) {
       if (user?.id) token.id = user.id;
+      if (typeof user?.email === 'string' && user.email.trim() !== '') {
+        token.email = normalizeEmail(user.email);
+      }
+      if (typeof user?.name === 'string') {
+        token.name = user.name;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token?.id) {
-        (session.user as { id?: string }).id = token.id as string;
+      if (session.user) {
+        if (token?.id) {
+          (session.user as { id?: string }).id = token.id as string;
+        }
+
+        if (typeof token?.email === 'string' && token.email.trim() !== '') {
+          session.user.email = normalizeEmail(token.email);
+        } else if (typeof session.user.email === 'string') {
+          session.user.email = normalizeEmail(session.user.email);
+        }
       }
       return session;
     },

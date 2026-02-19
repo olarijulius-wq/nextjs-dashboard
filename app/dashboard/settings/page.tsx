@@ -46,6 +46,11 @@ const settingCards = [
     description: 'Set unsubscribe pages and email preferences.',
   },
   {
+    title: 'Reminders admin',
+    href: '/dashboard/settings/reminders',
+    description: 'Run reminders manually and inspect run logs.',
+  },
+  {
     title: 'Documents',
     href: '/dashboard/settings/documents',
     description: 'Document templates and storage configuration.',

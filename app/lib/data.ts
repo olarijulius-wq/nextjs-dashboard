@@ -37,9 +37,28 @@ function isUndefinedColumnError(error: unknown): boolean {
 
 export async function requireUserEmail() {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('Unauthorized');
-  return normalizeEmail(email);
+  const sessionEmail = session?.user?.email;
+
+  if (typeof sessionEmail === 'string' && sessionEmail.trim() !== '') {
+    return normalizeEmail(sessionEmail);
+  }
+
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (typeof userId === 'string' && userId.trim() !== '') {
+    const [row] = await sql<{ email: string }[]>`
+      SELECT email
+      FROM users
+      WHERE id = ${userId}
+      LIMIT 1
+    `;
+
+    const emailFromDb = row?.email;
+    if (typeof emailFromDb === 'string' && emailFromDb.trim() !== '') {
+      return normalizeEmail(emailFromDb);
+    }
+  }
+
+  throw new Error('Unauthorized');
 }
 
 function getTallinnYear(date: Date = new Date()) {
@@ -377,11 +396,170 @@ export async function fetchCardData() {
   }
 }
 
-const ITEMS_PER_PAGE = 6;
+export type InvoiceStatusFilter = 'all' | 'overdue' | 'unpaid' | 'paid';
+export type InvoiceSortKey =
+  | 'due_date'
+  | 'amount'
+  | 'created_at'
+  | 'customer'
+  | 'status';
+export type InvoiceSortDir = 'asc' | 'desc';
+export type CustomerSortKey = 'name' | 'email' | 'created_at' | 'total_invoices';
+export type CustomerSortDir = 'asc' | 'desc';
+export type LatePayerSortKey =
+  | 'days_overdue'
+  | 'paid_invoices'
+  | 'name'
+  | 'email'
+  | 'amount';
+export type LatePayerSortDir = 'asc' | 'desc';
 
-export async function fetchFilteredInvoices(query: string, currentPage: number) {
+const DEFAULT_INVOICES_PAGE_SIZE = 50;
+const DEFAULT_CUSTOMERS_PAGE_SIZE = 50;
+const DEFAULT_LATE_PAYERS_PAGE_SIZE = 100;
+
+const ORDER_BY_SQL_BY_KEY: Record<InvoiceSortKey, (dir: InvoiceSortDir) => string> = {
+  due_date: (dir) =>
+    `invoices.due_date ${dir.toUpperCase()} NULLS LAST, invoices.date DESC, invoices.id DESC`,
+  amount: (dir) =>
+    `invoices.amount ${dir.toUpperCase()}, invoices.date DESC, invoices.id DESC`,
+  created_at: (dir) =>
+    `invoices.date ${dir.toUpperCase()}, invoices.id DESC`,
+  customer: (dir) =>
+    `lower(customers.name) ${dir.toUpperCase()}, invoices.date DESC, invoices.id DESC`,
+  status: (dir) =>
+    `lower(invoices.status) ${dir.toUpperCase()}, invoices.date DESC, invoices.id DESC`,
+};
+
+const CUSTOMER_ORDER_BY_SQL_BY_KEY: Record<
+  CustomerSortKey,
+  (dir: CustomerSortDir) => string
+> = {
+  name: (dir) => `lower(customers.name) ${dir.toUpperCase()}, customers.id DESC`,
+  email: (dir) => `lower(customers.email) ${dir.toUpperCase()}, customers.id DESC`,
+  created_at: (dir) => `customers.created_at ${dir.toUpperCase()}, customers.id DESC`,
+  total_invoices: (dir) => `COUNT(invoices.id) ${dir.toUpperCase()}, lower(customers.name) ASC`,
+};
+
+const LATE_PAYER_ORDER_BY_SQL_BY_KEY: Record<
+  LatePayerSortKey,
+  (dir: LatePayerSortDir) => string
+> = {
+  days_overdue: (dir) =>
+    `AVG(CASE WHEN invoices.due_date IS NOT NULL THEN (invoices.paid_at::date - invoices.due_date) ELSE (invoices.paid_at::date - invoices.date) END) ${dir.toUpperCase()}, lower(customers.name) ASC`,
+  paid_invoices: (dir) =>
+    `COUNT(invoices.id) ${dir.toUpperCase()}, lower(customers.name) ASC`,
+  amount: (dir) =>
+    `COUNT(invoices.id) ${dir.toUpperCase()}, lower(customers.name) ASC`,
+  name: (dir) => `lower(customers.name) ${dir.toUpperCase()}, customers.id DESC`,
+  email: (dir) => `lower(customers.email) ${dir.toUpperCase()}, customers.id DESC`,
+};
+
+function normalizeInvoiceStatusFilter(
+  statusFilter: string | undefined,
+): InvoiceStatusFilter {
+  if (statusFilter === 'overdue' || statusFilter === 'unpaid' || statusFilter === 'paid') {
+    return statusFilter;
+  }
+  return 'all';
+}
+
+function normalizeInvoiceSortKey(sortKey: string | undefined): InvoiceSortKey {
+  if (
+    sortKey === 'due_date' ||
+    sortKey === 'amount' ||
+    sortKey === 'created_at' ||
+    sortKey === 'customer' ||
+    sortKey === 'status'
+  ) {
+    return sortKey;
+  }
+  return 'created_at';
+}
+
+function normalizeInvoiceSortDir(sortDir: string | undefined): InvoiceSortDir {
+  if (sortDir === 'asc' || sortDir === 'desc') {
+    return sortDir;
+  }
+  return 'desc';
+}
+
+function normalizeInvoicePageSize(pageSize: number | undefined): number {
+  if (pageSize === 10 || pageSize === 25 || pageSize === 50 || pageSize === 100) {
+    return pageSize;
+  }
+  return DEFAULT_INVOICES_PAGE_SIZE;
+}
+
+function normalizeCustomerSortKey(sortKey: string | undefined): CustomerSortKey {
+  if (
+    sortKey === 'name' ||
+    sortKey === 'email' ||
+    sortKey === 'created_at' ||
+    sortKey === 'total_invoices'
+  ) {
+    return sortKey;
+  }
+  return 'name';
+}
+
+function normalizeCustomerSortDir(sortDir: string | undefined): CustomerSortDir {
+  if (sortDir === 'asc' || sortDir === 'desc') {
+    return sortDir;
+  }
+  return 'asc';
+}
+
+function normalizeCustomerPageSize(pageSize: number | undefined): number {
+  if (pageSize === 10 || pageSize === 25 || pageSize === 50 || pageSize === 100) {
+    return pageSize;
+  }
+  return DEFAULT_CUSTOMERS_PAGE_SIZE;
+}
+
+function normalizeLatePayerSortKey(sortKey: string | undefined): LatePayerSortKey {
+  if (
+    sortKey === 'days_overdue' ||
+    sortKey === 'paid_invoices' ||
+    sortKey === 'name' ||
+    sortKey === 'email' ||
+    sortKey === 'amount'
+  ) {
+    return sortKey;
+  }
+  return 'days_overdue';
+}
+
+function normalizeLatePayerSortDir(sortDir: string | undefined): LatePayerSortDir {
+  if (sortDir === 'asc' || sortDir === 'desc') {
+    return sortDir;
+  }
+  return 'desc';
+}
+
+function normalizeLatePayerPageSize(pageSize: number | undefined): number {
+  if (pageSize === 25 || pageSize === 50 || pageSize === 100 || pageSize === 200) {
+    return pageSize;
+  }
+  return DEFAULT_LATE_PAYERS_PAGE_SIZE;
+}
+
+export async function fetchFilteredInvoices(
+  query: string,
+  currentPage: number,
+  statusFilter: string = 'all',
+  sortKey: string = 'created_at',
+  sortDir: string = 'desc',
+  pageSize: number = DEFAULT_INVOICES_PAGE_SIZE,
+) {
   const userEmail = await requireUserEmail();
-  const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+  const safeCurrentPage = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const safePageSize = normalizeInvoicePageSize(pageSize);
+  const offset = (safeCurrentPage - 1) * safePageSize;
+  const safeStatusFilter = normalizeInvoiceStatusFilter(statusFilter);
+  const safeSortKey = normalizeInvoiceSortKey(sortKey);
+  const safeSortDir = normalizeInvoiceSortDir(sortDir);
+  const orderByClause = ORDER_BY_SQL_BY_KEY[safeSortKey](safeSortDir);
 
   try {
     const invoices = await sql<InvoicesTable[]>`
@@ -407,6 +585,22 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
       WHERE lower(invoices.user_email) = ${userEmail}
         AND lower(customers.user_email) = ${userEmail}
         AND (
+          ${safeStatusFilter} = 'all'
+          OR (${safeStatusFilter} = 'paid' AND invoices.status = 'paid')
+          OR (${safeStatusFilter} = 'unpaid' AND invoices.status <> 'paid')
+          OR (
+            ${safeStatusFilter} = 'overdue'
+            AND (
+              invoices.status = 'overdue'
+              OR (
+                invoices.due_date IS NOT NULL
+                AND invoices.due_date < current_date
+                AND invoices.status <> 'paid'
+              )
+            )
+          )
+        )
+        AND (
           customers.name ILIKE ${`%${query}%`} OR
           customers.email ILIKE ${`%${query}%`} OR
           invoices.amount::text ILIKE ${`%${query}%`} OR
@@ -414,8 +608,8 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
           invoices.date::text ILIKE ${`%${query}%`} OR
           invoices.status ILIKE ${`%${query}%`}
         )
-      ORDER BY invoices.date DESC
-      LIMIT ${ITEMS_PER_PAGE} OFFSET ${offset}
+      ORDER BY ${sql.unsafe(orderByClause)}
+      LIMIT ${safePageSize} OFFSET ${offset}
     `;
 
     return invoices;
@@ -425,8 +619,14 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
   }
 }
 
-export async function fetchInvoicesPages(query: string) {
+export async function fetchInvoicesPages(
+  query: string,
+  statusFilter: string = 'all',
+  pageSize: number = DEFAULT_INVOICES_PAGE_SIZE,
+) {
   const userEmail = await requireUserEmail();
+  const safeStatusFilter = normalizeInvoiceStatusFilter(statusFilter);
+  const safePageSize = normalizeInvoicePageSize(pageSize);
 
   try {
     const data = await sql`
@@ -436,15 +636,32 @@ export async function fetchInvoicesPages(query: string) {
       WHERE lower(invoices.user_email) = ${userEmail}
         AND lower(customers.user_email) = ${userEmail}
         AND (
+          ${safeStatusFilter} = 'all'
+          OR (${safeStatusFilter} = 'paid' AND invoices.status = 'paid')
+          OR (${safeStatusFilter} = 'unpaid' AND invoices.status <> 'paid')
+          OR (
+            ${safeStatusFilter} = 'overdue'
+            AND (
+              invoices.status = 'overdue'
+              OR (
+                invoices.due_date IS NOT NULL
+                AND invoices.due_date < current_date
+                AND invoices.status <> 'paid'
+              )
+            )
+          )
+        )
+        AND (
           customers.name ILIKE ${`%${query}%`} OR
           customers.email ILIKE ${`%${query}%`} OR
           invoices.amount::text ILIKE ${`%${query}%`} OR
+          COALESCE(invoices.invoice_number, '') ILIKE ${`%${query}%`} OR
           invoices.date::text ILIKE ${`%${query}%`} OR
           invoices.status ILIKE ${`%${query}%`}
         )
     `;
 
-    const totalPages = Math.ceil(Number(data[0].count) / ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(Number(data[0].count) / safePageSize);
     return totalPages;
   } catch (error) {
     console.error('Database Error:', error);
@@ -609,8 +826,20 @@ export async function fetchInvoicesByCustomerId(customerId: string) {
   }
 }
 
-export async function fetchLatePayerStats(limit = 10) {
+export async function fetchLatePayerStats(
+  currentPage: number = 1,
+  pageSize: number = DEFAULT_LATE_PAYERS_PAGE_SIZE,
+  sortKey: string = 'days_overdue',
+  sortDir: string = 'desc',
+  query: string = '',
+) {
   const userEmail = await requireUserEmail();
+  const safeCurrentPage = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const safePageSize = normalizeLatePayerPageSize(pageSize);
+  const offset = (safeCurrentPage - 1) * safePageSize;
+  const safeSortKey = normalizeLatePayerSortKey(sortKey);
+  const safeSortDir = normalizeLatePayerSortDir(sortDir);
+  const orderByClause = LATE_PAYER_ORDER_BY_SQL_BY_KEY[safeSortKey](safeSortDir);
 
   try {
     const data = await sql<LatePayerStat[]>`
@@ -632,6 +861,11 @@ export async function fetchLatePayerStats(limit = 10) {
         AND lower(customers.user_email) = ${userEmail}
       WHERE
         lower(invoices.user_email) = ${userEmail}
+        AND (
+          customers.name ILIKE ${`%${query}%`}
+          OR customers.email ILIKE ${`%${query}%`}
+          OR COALESCE(invoices.invoice_number, '') ILIKE ${`%${query}%`}
+        )
         AND invoices.status = 'paid'
         AND invoices.paid_at IS NOT NULL
         AND (
@@ -642,8 +876,8 @@ export async function fetchLatePayerStats(limit = 10) {
           END
         ) > 0
       GROUP BY customers.id, customers.name, customers.email
-      ORDER BY avg_delay_days DESC
-      LIMIT ${limit}
+      ORDER BY ${sql.unsafe(orderByClause)}
+      LIMIT ${safePageSize} OFFSET ${offset}
     `;
 
     return data;
@@ -653,8 +887,60 @@ export async function fetchLatePayerStats(limit = 10) {
   }
 }
 
-export async function fetchFilteredCustomers(query: string) {
+export async function fetchLatePayerPages(query: string = '', pageSize: number = DEFAULT_LATE_PAYERS_PAGE_SIZE) {
   const userEmail = await requireUserEmail();
+  const safePageSize = normalizeLatePayerPageSize(pageSize);
+
+  try {
+    const data = await sql`
+      SELECT COUNT(*)
+      FROM (
+        SELECT customers.id
+        FROM invoices
+        JOIN customers
+          ON customers.id = invoices.customer_id
+          AND lower(customers.user_email) = ${userEmail}
+        WHERE
+          lower(invoices.user_email) = ${userEmail}
+          AND (
+            customers.name ILIKE ${`%${query}%`}
+            OR customers.email ILIKE ${`%${query}%`}
+            OR COALESCE(invoices.invoice_number, '') ILIKE ${`%${query}%`}
+          )
+          AND invoices.status = 'paid'
+          AND invoices.paid_at IS NOT NULL
+          AND (
+            CASE
+              WHEN invoices.due_date IS NOT NULL
+              THEN (invoices.paid_at::date - invoices.due_date)
+              ELSE (invoices.paid_at::date - invoices.date)
+            END
+          ) > 0
+        GROUP BY customers.id
+      ) late_payers
+    `;
+
+    return Math.ceil(Number(data[0].count) / safePageSize);
+  } catch (error) {
+    console.error('Database Error:', error);
+    throw new Error('Failed to fetch total number of late payers.');
+  }
+}
+
+export async function fetchFilteredCustomers(
+  query: string,
+  currentPage: number = 1,
+  pageSize: number = DEFAULT_CUSTOMERS_PAGE_SIZE,
+  sortKey: string = 'name',
+  sortDir: string = 'asc',
+) {
+  const userEmail = await requireUserEmail();
+  const safeCurrentPage = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const safePageSize = normalizeCustomerPageSize(pageSize);
+  const offset = (safeCurrentPage - 1) * safePageSize;
+  const safeSortKey = normalizeCustomerSortKey(sortKey);
+  const safeSortDir = normalizeCustomerSortDir(sortDir);
+  const orderByClause = CUSTOMER_ORDER_BY_SQL_BY_KEY[safeSortKey](safeSortDir);
 
   try {
     const data = await sql<CustomersTableType[]>`
@@ -676,7 +962,8 @@ export async function fetchFilteredCustomers(query: string) {
           customers.email ILIKE ${`%${query}%`}
         )
       GROUP BY customers.id, customers.name, customers.email, customers.image_url
-      ORDER BY customers.name ASC
+      ORDER BY ${sql.unsafe(orderByClause)}
+      LIMIT ${safePageSize} OFFSET ${offset}
     `;
 
     const customers = data.map((customer) => ({
@@ -689,6 +976,31 @@ export async function fetchFilteredCustomers(query: string) {
   } catch (err) {
     console.error('Database Error:', err);
     throw new Error('Failed to fetch customer table.');
+  }
+}
+
+export async function fetchCustomersPages(
+  query: string,
+  pageSize: number = DEFAULT_CUSTOMERS_PAGE_SIZE,
+) {
+  const userEmail = await requireUserEmail();
+  const safePageSize = normalizeCustomerPageSize(pageSize);
+
+  try {
+    const data = await sql`
+      SELECT COUNT(*)
+      FROM customers
+      WHERE lower(customers.user_email) = ${userEmail}
+        AND (
+          customers.name ILIKE ${`%${query}%`} OR
+          customers.email ILIKE ${`%${query}%`}
+        )
+    `;
+
+    return Math.ceil(Number(data[0].count) / safePageSize);
+  } catch (err) {
+    console.error('Database Error:', err);
+    throw new Error('Failed to fetch total number of customers.');
   }
 }
 

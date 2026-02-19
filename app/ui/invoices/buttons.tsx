@@ -1,3 +1,5 @@
+'use client';
+
 import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { deleteInvoice } from '@/app/lib/actions';
@@ -15,10 +17,14 @@ export function CreateInvoice() {
   );
 }
 
-export function UpdateInvoice({ id }: { id: string }) {
+export function UpdateInvoice({ id, returnTo }: { id: string; returnTo?: string }) {
+  const href = returnTo
+    ? `/dashboard/invoices/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`
+    : `/dashboard/invoices/${id}/edit`;
+
   return (
     <Link
-      href={`/dashboard/invoices/${id}/edit`}
+      href={href}
       className={`${secondaryButtonClasses} h-9 px-2`}
     >
       <PencilIcon className="w-5" />

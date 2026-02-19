@@ -3,10 +3,14 @@ import Link from 'next/link';
 import { deleteCustomer } from '@/app/lib/actions';
 import { secondaryButtonClasses } from '@/app/ui/button';
 
-export function UpdateCustomer({ id }: { id: string }) {
+export function UpdateCustomer({ id, returnTo }: { id: string; returnTo?: string }) {
+  const href = returnTo
+    ? `/dashboard/customers/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`
+    : `/dashboard/customers/${id}/edit`;
+
   return (
     <Link
-      href={`/dashboard/customers/${id}/edit`}
+      href={href}
       className={`${secondaryButtonClasses} h-9 px-2`}
     >
       <PencilIcon className="w-5" />

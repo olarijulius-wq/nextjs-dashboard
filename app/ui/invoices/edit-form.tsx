@@ -17,9 +17,11 @@ const neutralSecondaryButtonClasses =
 export default function EditInvoiceForm({
   invoice,
   customers,
+  returnTo,
 }: {
   invoice: InvoiceForm;
   customers: CustomerField[];
+  returnTo?: string;
 }) {
   const initialState: State = { message: null, errors: {} };
   const updateInvoiceWithId = updateInvoice.bind(null, invoice.id);
@@ -31,6 +33,7 @@ export default function EditInvoiceForm({
  
   return (
     <form action={formAction}>
+      <input type="hidden" name="returnTo" value={returnTo ?? ''} />
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] md:p-6 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {/* Customer Name */}
         <div className="mb-4">

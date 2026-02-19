@@ -8,10 +8,15 @@ export const metadata: Metadata = {
   title: 'Edit Customer',
 };
 
-export default async function Page(props: { params: Promise<{ id: string }> }) {
+export default async function Page(props: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ returnTo?: string }>;
+}) {
   const params = await props.params;
+  const searchParams = await props.searchParams;
   const id = params.id;
   const customer = await fetchCustomerById(id);
+  const returnTo = searchParams?.returnTo;
 
   if (!customer) {
     notFound();
@@ -21,7 +26,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     <main>
       <Breadcrumbs
         breadcrumbs={[
-          { label: 'Customers', href: '/dashboard/customers' },
+          { label: 'Customers', href: returnTo || '/dashboard/customers' },
           {
             label: 'Edit Customer',
             href: `/dashboard/customers/${id}/edit`,
@@ -29,7 +34,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           },
         ]}
       />
-      <Form customer={customer} />
+      <Form customer={customer} returnTo={returnTo} />
     </main>
   );
 }

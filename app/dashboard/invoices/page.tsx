@@ -8,6 +8,9 @@ import {
   fetchInvoicesPages,
   fetchUserInvoiceUsageProgress,
   fetchStripeConnectAccountId,
+  type InvoiceSortDir,
+  type InvoiceSortKey,
+  type InvoiceStatusFilter,
 } from '@/app/lib/data';
 import ExportInvoicesButton from './export-button';
 import { PLAN_CONFIG } from '@/app/lib/config';
@@ -15,6 +18,8 @@ import { RevealOnMount } from '@/app/ui/motion/reveal';
 import { toolbarButtonClasses } from '@/app/ui/button';
 import MobileExpandableSearchToolbar from '@/app/ui/dashboard/mobile-expandable-search-toolbar';
 import UpgradeNudge from '@/app/ui/upgrade-nudge';
+import InvoicesListControls from '@/app/ui/invoices/list-controls';
+import InvoicesUpdatedToast from '@/app/ui/invoices/updated-toast';
 
 export const metadata: Metadata = {
   title: 'Invoices',
@@ -24,17 +29,65 @@ export default async function Page(props: {
   searchParams?: Promise<{
     query?: string;
     page?: string;
+    status?: string;
+    sort?: string;
+    dir?: string;
+    pageSize?: string;
+    highlight?: string;
+    updated?: string;
+    updatedInvoice?: string;
     interval?: string;
   }>;
 }) {
   const searchParams = await props.searchParams;
   const query = searchParams?.query || '';
-  const currentPage = Number(searchParams?.page) || 1;
+  const currentPage = Number(searchParams?.page) > 0 ? Number(searchParams?.page) : 1;
+  const statusFilter: InvoiceStatusFilter =
+    searchParams?.status === 'overdue' ||
+    searchParams?.status === 'unpaid' ||
+    searchParams?.status === 'paid'
+      ? searchParams.status
+      : 'all';
+  const sortKey: InvoiceSortKey =
+    searchParams?.sort === 'due_date' ||
+    searchParams?.sort === 'amount' ||
+    searchParams?.sort === 'created_at' ||
+    searchParams?.sort === 'customer' ||
+    searchParams?.sort === 'status'
+      ? searchParams.sort
+      : 'created_at';
+  const sortDir: InvoiceSortDir =
+    searchParams?.dir === 'asc' || searchParams?.dir === 'desc'
+      ? searchParams.dir
+      : 'desc';
+  const pageSize =
+    searchParams?.pageSize === '10' ||
+    searchParams?.pageSize === '25' ||
+    searchParams?.pageSize === '50' ||
+    searchParams?.pageSize === '100'
+      ? Number(searchParams.pageSize)
+      : 50;
+  const highlight = searchParams?.highlight?.trim() || '';
+  const isUpdated = searchParams?.updated === '1';
+  const updatedInvoiceId =
+    searchParams?.updatedInvoice?.trim() || highlight || '';
   const interval = searchParams?.interval;
+  const returnToParams = new URLSearchParams();
+
+  if (query) returnToParams.set('query', query);
+  if (searchParams?.status) returnToParams.set('status', searchParams.status);
+  if (searchParams?.sort) returnToParams.set('sort', searchParams.sort);
+  if (searchParams?.dir) returnToParams.set('dir', searchParams.dir);
+  if (searchParams?.page) returnToParams.set('page', searchParams.page);
+  if (searchParams?.pageSize) returnToParams.set('pageSize', searchParams.pageSize);
+  const returnToPath =
+    returnToParams.toString().length > 0
+      ? `/dashboard/invoices?${returnToParams.toString()}`
+      : '/dashboard/invoices';
 
   const [invoices, totalPages, usage, stripeConnectAccountId] = await Promise.all([
-    fetchFilteredInvoices(query, currentPage),
-    fetchInvoicesPages(query),
+    fetchFilteredInvoices(query, currentPage, statusFilter, sortKey, sortDir, pageSize),
+    fetchInvoicesPages(query, statusFilter, pageSize),
     fetchUserInvoiceUsageProgress(),
     fetchStripeConnectAccountId(),
   ]);
@@ -93,9 +146,21 @@ export default async function Page(props: {
 
       <RevealOnMount delay={0.12}>
         <div>
+          <InvoicesUpdatedToast
+            visible={isUpdated}
+            invoiceId={updatedInvoiceId}
+          />
+          <InvoicesListControls
+            statusFilter={statusFilter}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            pageSize={pageSize}
+          />
           <Table
             invoices={invoices}
             hasStripeConnect={!!stripeConnectAccountId}
+            highlightedInvoiceId={highlight}
+            returnToPath={returnToPath}
           />
           <div className="mt-6 flex w-full justify-center">
             <Pagination totalPages={totalPages} />

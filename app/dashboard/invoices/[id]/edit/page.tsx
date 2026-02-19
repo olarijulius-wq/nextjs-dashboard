@@ -9,9 +9,16 @@ export const metadata: Metadata = {
 };
  
  
-export default async function Page(props: { params: Promise<{ id: string }> }) {
+export default async function Page(props: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ returnTo?: string }>;
+}) {
   const params = await props.params;
+  const searchParams = props.searchParams
+    ? await props.searchParams
+    : undefined;
   const id = params.id;
+  const returnTo = searchParams?.returnTo;
   const [invoice, customers] = await Promise.all([
     fetchInvoiceFormById(id),
     fetchCustomers(),
@@ -31,7 +38,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           },
         ]}
       />
-      <Form invoice={invoice} customers={customers} />
+      <Form invoice={invoice} customers={customers} returnTo={returnTo} />
     </main>
   );
 }

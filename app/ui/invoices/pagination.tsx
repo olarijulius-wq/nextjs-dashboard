@@ -7,16 +7,22 @@ import { generatePagination } from '@/app/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { DARK_PAGINATION_BTN } from '@/app/ui/theme/tokens';
 
-export default function Pagination({ totalPages }: { totalPages: number }) {
+export default function Pagination({
+  totalPages,
+  pageParam = 'page',
+}: {
+  totalPages: number;
+  pageParam?: string;
+}) {
   // NOTE: Uncomment this code in Chapter 10
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentPage = Number(searchParams.get('page')) || 1;
+  const currentPage = Number(searchParams.get(pageParam)) || 1;
   const allPages = generatePagination(currentPage, totalPages);
 
   const createPageURL = (pageNumber: number | string) => {
     const params = new URLSearchParams(searchParams);
-    params.set('page', pageNumber.toString());
+    params.set(pageParam, pageNumber.toString());
     return `${pathname}?${params.toString()}`;
   };
   
