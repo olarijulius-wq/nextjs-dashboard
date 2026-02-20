@@ -54,7 +54,10 @@ export default function MobileDrawer({ userEmail, logoutAction }: MobileDrawerPr
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative z-20 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-white text-slate-900 transition hover:border-neutral-300 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-black dark:text-neutral-200 dark:hover:border-neutral-700 dark:hover:text-white md:hidden"
+        className={clsx(
+          'pointer-events-auto fixed right-[calc(env(safe-area-inset-right)+12px)] top-[calc(env(safe-area-inset-top)+12px)] z-[130] inline-flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-white/95 text-slate-900 shadow-lg backdrop-blur transition hover:border-neutral-300 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-black/90 dark:text-neutral-200 dark:hover:border-neutral-700 dark:hover:text-white md:hidden',
+          open && 'pointer-events-none opacity-0',
+        )}
         aria-expanded={open}
         aria-controls="dashboard-mobile-drawer"
         aria-label="Open navigation menu"
