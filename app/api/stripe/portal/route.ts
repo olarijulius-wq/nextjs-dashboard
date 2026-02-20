@@ -7,6 +7,8 @@ import {
   assertStripeConfig,
   normalizeStripeConfigError,
 } from '@/app/lib/stripe-guard';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
+import { insertBillingEvent } from '@/app/lib/billing-dunning';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -17,6 +19,13 @@ export async function POST() {
   }
 
   const email = session.user.email.trim().toLowerCase();
+  let workspaceId: string | null = null;
+  try {
+    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    workspaceId = workspaceContext.workspaceId;
+  } catch {
+    workspaceId = null;
+  }
 
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -52,6 +61,17 @@ export async function POST() {
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: customerId,
       return_url: `${baseUrl}/dashboard/settings`,
+    });
+
+    await insertBillingEvent({
+      workspaceId,
+      userEmail: email,
+      eventType: 'portal.opened',
+      stripeObjectId: customerId,
+      status: null,
+      meta: {
+        returnUrl: `${baseUrl}/dashboard/settings`,
+      },
     });
 
     return NextResponse.json({ url: portalSession.url });

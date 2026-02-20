@@ -97,3 +97,44 @@ How to confirm throttling:
 - Guardrail checks:
   - Missing customer email returns clear inline error and **Fix customer** link.
   - Missing provider config returns clear admin hint to fix SMTP/Resend settings.
+
+## Failed Payment Recovery & Dunning
+
+### 1) Simulate payment failure (Stripe test mode)
+
+- Use Stripe test mode and create/update a subscription for a test customer.
+- In Stripe Dashboard, force a failed invoice payment (`invoice.payment_failed`) by attaching a failing test payment method, then retry with a valid one to emit `invoice.payment_succeeded`.
+- Confirm in Lateless:
+  - Dashboard shows the payment recovery banner.
+  - `/dashboard/settings/billing` shows `recovery_required = yes` and latest billing event.
+
+### 2) Replay webhook events safely
+
+- Replay the same Stripe event from Stripe Dashboard or Stripe CLI.
+- Expected behavior:
+  - `public.stripe_webhook_events` remains idempotent by `event_id`.
+  - `public.billing_events` does not duplicate rows for the same `stripe_event_id`.
+  - `public.dunning_state` keeps stable end state (no incorrect status flaps from replay).
+
+### 3) Verification SQL
+
+- Check current workspace dunning state:
+  - `select workspace_id, subscription_status, recovery_required, last_payment_failure_at, last_recovery_email_at, last_banner_dismissed_at, updated_at from public.dunning_state where workspace_id = '<workspace_id>';`
+- Check recent billing events:
+  - `select created_at, event_type, status, stripe_event_id, stripe_object_id from public.billing_events where workspace_id = '<workspace_id>' order by created_at desc limit 50;`
+- Validate event dedupe:
+  - `select stripe_event_id, count(*) from public.billing_events where stripe_event_id is not null group by stripe_event_id having count(*) > 1;`
+
+## Usage Invoices Verification (30d, Europe/Tallinn)
+
+- Raw count (last 30 days, invoices created):
+  - Workspace-scoped (if `invoices.workspace_id` exists):
+    - `select count(*) as created_count from public.invoices i where i.workspace_id = '<workspace_id>' and i.issued_at >= ((date_trunc('day', now() at time zone 'Europe/Tallinn') - interval '29 days') at time zone 'Europe/Tallinn') and i.issued_at < (((date_trunc('day', now() at time zone 'Europe/Tallinn') + interval '1 day')) at time zone 'Europe/Tallinn');`
+  - Email fallback (if `invoices.workspace_id` does not exist):
+    - `select count(*) as created_count from public.invoices i where lower(i.user_email) = lower('<user_email>') and i.issued_at >= ((date_trunc('day', now() at time zone 'Europe/Tallinn') - interval '29 days') at time zone 'Europe/Tallinn') and i.issued_at < (((date_trunc('day', now() at time zone 'Europe/Tallinn') + interval '1 day')) at time zone 'Europe/Tallinn');`
+
+- Grouped by day (last 30 days, Europe/Tallinn, zero-filled):
+  - Workspace-scoped (if `invoices.workspace_id` exists):
+    - `with bounds as (select date_trunc('day', now() at time zone 'Europe/Tallinn') - interval '29 days' as start_day, date_trunc('day', now() at time zone 'Europe/Tallinn') as end_day), days as (select generate_series((select start_day from bounds), (select end_day from bounds), interval '1 day') as day), grouped as (select date_trunc('day', i.issued_at at time zone 'Europe/Tallinn') as day, count(*)::int as count from public.invoices i where i.workspace_id = '<workspace_id>' and i.issued_at is not null and i.issued_at >= ((select start_day from bounds) at time zone 'Europe/Tallinn') and i.issued_at < (((select end_day from bounds) + interval '1 day') at time zone 'Europe/Tallinn') group by 1) select to_char(days.day, 'YYYY-MM-DD') as day, coalesce(grouped.count, 0) as created_count from days left join grouped on grouped.day = days.day order by days.day asc;`
+  - Email fallback (if `invoices.workspace_id` does not exist):
+    - `with bounds as (select date_trunc('day', now() at time zone 'Europe/Tallinn') - interval '29 days' as start_day, date_trunc('day', now() at time zone 'Europe/Tallinn') as end_day), days as (select generate_series((select start_day from bounds), (select end_day from bounds), interval '1 day') as day), grouped as (select date_trunc('day', i.issued_at at time zone 'Europe/Tallinn') as day, count(*)::int as count from public.invoices i where lower(i.user_email) = lower('<user_email>') and i.issued_at is not null and i.issued_at >= ((select start_day from bounds) at time zone 'Europe/Tallinn') and i.issued_at < (((select end_day from bounds) + interval '1 day') at time zone 'Europe/Tallinn') group by 1) select to_char(days.day, 'YYYY-MM-DD') as day, coalesce(grouped.count, 0) as created_count from days left join grouped on grouped.day = days.day order by days.day asc;`

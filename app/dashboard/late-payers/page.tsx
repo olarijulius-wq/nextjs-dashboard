@@ -13,6 +13,8 @@ import { toolbarButtonClasses } from '@/app/ui/button';
 import { RevealOnMount } from '@/app/ui/motion/reveal';
 import LatePayersControls from '@/app/ui/dashboard/late-payers-controls';
 import Pagination from '@/app/ui/invoices/pagination';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
+import { fetchWorkspaceDunningState } from '@/app/lib/billing-dunning';
 
 export const metadata: Metadata = {
   title: 'Late payers',
@@ -66,6 +68,14 @@ export default async function Page(props: {
         fetchLatePayerPages(query, pageSize),
       ])
     : [[], 0];
+  let showRecoveryWarning = false;
+  try {
+    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    const dunningState = await fetchWorkspaceDunningState(workspaceContext.workspaceId);
+    showRecoveryWarning = Boolean(dunningState?.recoveryRequired);
+  } catch {
+    showRecoveryWarning = false;
+  }
   const isEmpty = latePayers.length === 0;
   const totalLatePayers = latePayers.length;
 
@@ -80,6 +90,11 @@ export default async function Page(props: {
             Customers who pay invoices after the due date.
           </p>
         </div>
+        {showRecoveryWarning ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-100 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+            Billing warning: payment recovery is required. Some paid features may be limited until payment is fixed.
+          </div>
+        ) : null}
 
         {!canView ? (
           <div className="rounded-xl border border-amber-300 bg-amber-100 p-6 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">

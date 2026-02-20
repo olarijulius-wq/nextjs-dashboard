@@ -24,6 +24,20 @@ export type UsageTimeseriesPoint = {
   reminderError: number;
 };
 
+export type InvoiceUsageMetric = 'created' | 'sent' | 'paid';
+
+type UsageTimeseriesDebug = {
+  scopeKey: 'workspace_id' | 'user_email';
+  normalizedDateColumn: string;
+  timezone: 'Europe/Tallinn';
+  invoiceMetric: InvoiceUsageMetric;
+};
+
+export type UsageTimeseriesResult = {
+  points: UsageTimeseriesPoint[];
+  debug: UsageTimeseriesDebug;
+};
+
 export type UsageTopReason = {
   reason: string;
   count: number;
@@ -128,10 +142,6 @@ export async function fetchUsageSummary(
   return summary;
 }
 
-function toIsoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
 function startOfUtcDay(value: Date) {
   const date = new Date(value);
   date.setUTCHours(0, 0, 0, 0);
@@ -144,13 +154,230 @@ function addUtcDays(value: Date, days: number) {
   return date;
 }
 
+function normalizeMetric(metric: string | null | undefined): InvoiceUsageMetric {
+  if (metric === 'sent' || metric === 'paid') {
+    return metric;
+  }
+  return 'created';
+}
+
+type InvoiceUsageSchemaCapabilities = {
+  hasInvoicesWorkspaceId: boolean;
+  hasInvoicesCreatedAt: boolean;
+  hasInvoicesIssuedAt: boolean;
+  hasInvoiceEmailLogsTable: boolean;
+  hasInvoiceEmailLogsSentAt: boolean;
+  hasInvoiceEmailLogsStatus: boolean;
+};
+
+let invoiceUsageSchemaCapabilitiesPromise: Promise<InvoiceUsageSchemaCapabilities> | null =
+  null;
+
+async function getInvoiceUsageSchemaCapabilities(): Promise<InvoiceUsageSchemaCapabilities> {
+  if (!invoiceUsageSchemaCapabilitiesPromise) {
+    invoiceUsageSchemaCapabilitiesPromise = (async () => {
+      const columns = await sql<{ table_name: string; column_name: string }[]>`
+        select table_name, column_name
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name in ('invoices', 'invoice_email_logs')
+          and column_name in ('workspace_id', 'created_at', 'issued_at', 'sent_at', 'status')
+      `;
+
+      const columnSet = new Set(columns.map((row) => `${row.table_name}.${row.column_name}`));
+      const [emailLogTable] = await sql<{ regclass: string | null }[]>`
+        select to_regclass('public.invoice_email_logs')::text as regclass
+      `;
+
+      return {
+        hasInvoicesWorkspaceId: columnSet.has('invoices.workspace_id'),
+        hasInvoicesCreatedAt: columnSet.has('invoices.created_at'),
+        hasInvoicesIssuedAt: columnSet.has('invoices.issued_at'),
+        hasInvoiceEmailLogsTable: Boolean(emailLogTable?.regclass),
+        hasInvoiceEmailLogsSentAt: columnSet.has('invoice_email_logs.sent_at'),
+        hasInvoiceEmailLogsStatus: columnSet.has('invoice_email_logs.status'),
+      };
+    })();
+  }
+
+  return invoiceUsageSchemaCapabilitiesPromise;
+}
+
+function buildTallinnDateKeys(days: number): string[] {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Tallinn',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const keys: string[] = [];
+  const now = new Date();
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now);
+    date.setUTCDate(date.getUTCDate() - offset);
+    keys.push(formatter.format(date));
+  }
+  return keys;
+}
+
+async function fetchInvoiceDailyCounts(input: {
+  workspaceId: string;
+  userEmail: string;
+  days: number;
+  metric: InvoiceUsageMetric;
+}): Promise<{ rows: { date: string; count: string }[]; debug: UsageTimeseriesDebug }> {
+  const schema = await getInvoiceUsageSchemaCapabilities();
+  const scopeKey: 'workspace_id' | 'user_email' = schema.hasInvoicesWorkspaceId
+    ? 'workspace_id'
+    : 'user_email';
+  const normalizedUserEmail = input.userEmail.trim().toLowerCase();
+
+  if (input.metric === 'sent') {
+    if (!schema.hasInvoiceEmailLogsTable || !schema.hasInvoiceEmailLogsSentAt) {
+      const emptyRows = buildTallinnDateKeys(input.days).map((date) => ({ date, count: '0' }));
+      return {
+        rows: emptyRows,
+        debug: {
+          scopeKey,
+          normalizedDateColumn: 'invoice_email_logs.sent_at',
+          timezone: 'Europe/Tallinn',
+          invoiceMetric: input.metric,
+        },
+      };
+    }
+
+    const scopePredicate = schema.hasInvoicesWorkspaceId
+      ? sql`i.workspace_id = ${input.workspaceId}`
+      : sql`lower(i.user_email) = ${normalizedUserEmail}`;
+    const sentStatusPredicate = schema.hasInvoiceEmailLogsStatus
+      ? sql`and l.status = 'sent'`
+      : sql``;
+
+    const rows = await sql<{ date: string; count: string }[]>`
+      with bounds as (
+        select
+          date_trunc('day', now() at time zone 'Europe/Tallinn') - (${input.days - 1} * interval '1 day') as start_day,
+          date_trunc('day', now() at time zone 'Europe/Tallinn') as end_day
+      ),
+      days as (
+        select generate_series(
+          (select start_day from bounds),
+          (select end_day from bounds),
+          interval '1 day'
+        ) as day
+      ),
+      grouped as (
+        select
+          date_trunc('day', l.sent_at at time zone 'Europe/Tallinn') as day,
+          count(*)::text as count
+        from public.invoice_email_logs l
+        join public.invoices i on i.id = l.invoice_id
+        where ${scopePredicate}
+          and l.sent_at is not null
+          ${sentStatusPredicate}
+          and l.sent_at >= ((select start_day from bounds) at time zone 'Europe/Tallinn')
+          and l.sent_at < (((select end_day from bounds) + interval '1 day') at time zone 'Europe/Tallinn')
+        group by date_trunc('day', l.sent_at at time zone 'Europe/Tallinn')
+      )
+      select
+        to_char(days.day, 'YYYY-MM-DD') as date,
+        coalesce(grouped.count, '0') as count
+      from days
+      left join grouped on grouped.day = days.day
+      order by days.day asc
+    `;
+
+    return {
+      rows,
+      debug: {
+        scopeKey,
+        normalizedDateColumn: 'invoice_email_logs.sent_at',
+        timezone: 'Europe/Tallinn',
+        invoiceMetric: input.metric,
+      },
+    };
+  }
+
+  const dateColumn = input.metric === 'paid'
+    ? 'i.paid_at'
+    : schema.hasInvoicesCreatedAt
+      ? 'i.created_at'
+      : schema.hasInvoicesIssuedAt
+        ? 'i.issued_at'
+        : 'i.issued_at';
+  const scopePredicate = schema.hasInvoicesWorkspaceId
+    ? sql`i.workspace_id = ${input.workspaceId}`
+    : sql`lower(i.user_email) = ${normalizedUserEmail}`;
+
+  const rows = await sql<{ date: string; count: string }[]>`
+    with bounds as (
+      select
+        date_trunc('day', now() at time zone 'Europe/Tallinn') - (${input.days - 1} * interval '1 day') as start_day,
+        date_trunc('day', now() at time zone 'Europe/Tallinn') as end_day
+    ),
+    days as (
+      select generate_series(
+        (select start_day from bounds),
+        (select end_day from bounds),
+        interval '1 day'
+      ) as day
+    ),
+    grouped as (
+      select
+        date_trunc('day', (${sql.unsafe(dateColumn)} at time zone 'Europe/Tallinn')) as day,
+        count(*)::text as count
+      from public.invoices i
+      where ${scopePredicate}
+        and ${sql.unsafe(dateColumn)} is not null
+        and ${sql.unsafe(dateColumn)} >= ((select start_day from bounds) at time zone 'Europe/Tallinn')
+        and ${sql.unsafe(dateColumn)} < (((select end_day from bounds) + interval '1 day') at time zone 'Europe/Tallinn')
+      group by date_trunc('day', (${sql.unsafe(dateColumn)} at time zone 'Europe/Tallinn'))
+    )
+    select
+      to_char(days.day, 'YYYY-MM-DD') as date,
+      coalesce(grouped.count, '0') as count
+    from days
+    left join grouped on grouped.day = days.day
+    order by days.day asc
+  `;
+
+  return {
+    rows,
+    debug: {
+      scopeKey,
+      normalizedDateColumn:
+        input.metric === 'paid'
+          ? 'invoices.paid_at'
+          : schema.hasInvoicesCreatedAt
+            ? 'invoices.created_at'
+            : 'invoices.issued_at',
+      timezone: 'Europe/Tallinn',
+      invoiceMetric: input.metric,
+    },
+  };
+}
+
 export async function fetchUsageTimeseries(
-  workspaceId: string,
-  days = 30,
-): Promise<UsageTimeseriesPoint[]> {
+  input: {
+    workspaceId: string;
+    userEmail: string;
+    days?: number;
+    invoiceMetric?: string | null;
+  },
+): Promise<UsageTimeseriesResult> {
   await assertUsageSchemaReady();
 
-  const safeDays = Number.isFinite(days) ? Math.max(1, Math.min(90, days)) : 30;
+  const safeDays = Number.isFinite(input.days)
+    ? Math.max(1, Math.min(90, input.days ?? 30))
+    : 30;
+  const metric = normalizeMetric(input.invoiceMetric);
+  const invoiceSeries = await fetchInvoiceDailyCounts({
+    workspaceId: input.workspaceId,
+    userEmail: input.userEmail,
+    days: safeDays,
+    metric,
+  });
   const todayUtc = startOfUtcDay(new Date());
   const startDate = addUtcDays(todayUtc, -(safeDays - 1));
   const endDateExclusive = addUtcDays(todayUtc, 1);
@@ -161,11 +388,11 @@ export async function fetchUsageTimeseries(
     count: string;
   }[]>`
     select
-      (occurred_at at time zone 'UTC')::date::text as date,
+      (occurred_at at time zone 'Europe/Tallinn')::date::text as date,
       event_type,
       count(*)::text as count
     from public.workspace_usage_events
-    where workspace_id = ${workspaceId}
+    where workspace_id = ${input.workspaceId}
       and occurred_at >= ${startDate.toISOString()}
       and occurred_at < ${endDateExclusive.toISOString()}
       and event_type in (
@@ -174,15 +401,15 @@ export async function fetchUsageTimeseries(
         'reminder_skipped',
         'reminder_error'
       )
-    group by (occurred_at at time zone 'UTC')::date, event_type
+    group by (occurred_at at time zone 'Europe/Tallinn')::date, event_type
   `;
 
   const byDate = new Map<string, UsageTimeseriesPoint>();
-  for (let index = 0; index < safeDays; index += 1) {
-    const date = toIsoDate(addUtcDays(startDate, index));
+  for (const row of invoiceSeries.rows) {
+    const date = row.date;
     byDate.set(date, {
       date,
-      invoiceCreated: 0,
+      invoiceCreated: Number(row.count),
       reminderSent: 0,
       reminderSkipped: 0,
       reminderError: 0,
@@ -196,11 +423,6 @@ export async function fetchUsageTimeseries(
     }
 
     const count = Number(row.count);
-    if (row.event_type === 'invoice_created') {
-      point.invoiceCreated = count;
-      continue;
-    }
-
     if (row.event_type === 'reminder_sent') {
       point.reminderSent = count;
       continue;
@@ -214,7 +436,14 @@ export async function fetchUsageTimeseries(
     point.reminderError = count;
   }
 
-  return Array.from(byDate.values());
+  return {
+    points: Array.from(byDate.values()),
+    debug: invoiceSeries.debug,
+  };
+}
+
+export function normalizeUsageInvoiceMetric(metric: string | null | undefined): InvoiceUsageMetric {
+  return normalizeMetric(metric);
 }
 
 export async function fetchUsageTopReasons(

@@ -20,6 +20,7 @@ import {
 } from '@/app/lib/reminder-pauses';
 import { generatePayLink } from '@/app/lib/pay-link';
 import type { ReminderPanelItem } from './reminders-panel';
+import { fetchWorkspaceDunningState } from '@/app/lib/billing-dunning';
 
 export const metadata: Metadata = {
   title: 'Reminders',
@@ -308,6 +309,8 @@ async function fetchUpcomingReminders(
 export default async function RemindersPage() {
   try {
     const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    const dunningState = await fetchWorkspaceDunningState(workspaceContext.workspaceId);
+    const showRecoveryWarning = Boolean(dunningState?.recoveryRequired);
     const baseUrl = resolveBaseUrl();
 
     let emailSettings: WorkspaceEmailSettings | null = null;
@@ -439,6 +442,11 @@ export default async function RemindersPage() {
 
     return (
       <div className="space-y-6">
+        {showRecoveryWarning ? (
+          <div className="rounded-2xl border border-amber-300 bg-amber-100 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+            Billing warning: payment recovery is required. Resolve billing to keep reminders running without interruption.
+          </div>
+        ) : null}
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
             Reminders

@@ -9,6 +9,7 @@ import {
   fetchUsageTimeseries,
   fetchUsageTopReasons,
   isUsageMigrationRequiredError,
+  normalizeUsageInvoiceMetric,
   USAGE_MIGRATION_REQUIRED_CODE,
 } from '@/app/lib/usage';
 
@@ -22,15 +23,23 @@ function getCurrentMonthRange(now: Date) {
   return { monthStart, monthEnd };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
     const plan = await fetchUserPlanAndUsage();
     const { monthStart, monthEnd } = getCurrentMonthRange(new Date());
+    const metric = normalizeUsageInvoiceMetric(
+      new URL(request.url).searchParams.get('metric'),
+    );
 
     const [summary, timeseries, topSkipReasons] = await Promise.all([
       fetchUsageSummary(context.workspaceId, monthStart, monthEnd),
-      fetchUsageTimeseries(context.workspaceId, 30),
+      fetchUsageTimeseries({
+        workspaceId: context.workspaceId,
+        userEmail: context.userEmail,
+        days: 30,
+        invoiceMetric: metric,
+      }),
       fetchUsageTopReasons(context.workspaceId, monthStart, monthEnd),
     ]);
 

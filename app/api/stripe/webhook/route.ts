@@ -19,6 +19,13 @@ import {
   createStripeRequestVerifier,
   normalizeStripeConfigError,
 } from "@/app/lib/stripe-guard";
+import {
+  insertBillingEvent,
+  logRecoveryEmailFailure,
+  maybeSendRecoveryEmailForWorkspace,
+  normalizeBillingStatus,
+  upsertDunningStateFromStripeSignal,
+} from "@/app/lib/billing-dunning";
 
 export const runtime = "nodejs";
 
@@ -32,6 +39,197 @@ function debugLog(...args: unknown[]) {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+type BillingContextHints = {
+  workspaceId?: string | null;
+  userId?: string | null;
+  userEmail?: string | null;
+  customerId?: string | null;
+  subscriptionId?: string | null;
+};
+
+type BillingWorkspaceContext = {
+  workspaceId: string;
+  userEmail: string | null;
+};
+
+function readStripeObjectId(event: Stripe.Event): string | null {
+  const candidate = event.data.object as { id?: unknown } | null | undefined;
+  if (!candidate || typeof candidate.id !== "string") {
+    return null;
+  }
+  const normalized = candidate.id.trim();
+  return normalized ? normalized : null;
+}
+
+async function resolveBillingWorkspaceContext(
+  hints: BillingContextHints,
+): Promise<BillingWorkspaceContext | null> {
+  const workspaceHint = hints.workspaceId?.trim() || null;
+  if (workspaceHint) {
+    const rows = await sql<{ workspace_id: string; user_email: string | null }[]>`
+      select
+        w.id as workspace_id,
+        u.email as user_email
+      from public.workspaces w
+      join public.users u on u.id = w.owner_user_id
+      where w.id = ${workspaceHint}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  const userIdHint = hints.userId?.trim() || null;
+  if (userIdHint) {
+    const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
+      select
+        coalesce(u.active_workspace_id, w.id) as workspace_id,
+        u.email as user_email
+      from public.users u
+      left join public.workspaces w on w.owner_user_id = u.id
+      where u.id = ${userIdHint}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  const bySubscription = hints.subscriptionId?.trim() || null;
+  if (bySubscription) {
+    const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
+      select
+        coalesce(u.active_workspace_id, w.id) as workspace_id,
+        u.email as user_email
+      from public.users u
+      left join public.workspaces w on w.owner_user_id = u.id
+      where u.stripe_subscription_id = ${bySubscription}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  const byCustomer = hints.customerId?.trim() || null;
+  if (byCustomer) {
+    const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
+      select
+        coalesce(u.active_workspace_id, w.id) as workspace_id,
+        u.email as user_email
+      from public.users u
+      left join public.workspaces w on w.owner_user_id = u.id
+      where u.stripe_customer_id = ${byCustomer}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  const byEmail = hints.userEmail?.trim().toLowerCase() || null;
+  if (byEmail) {
+    const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
+      select
+        coalesce(u.active_workspace_id, w.id) as workspace_id,
+        u.email as user_email
+      from public.users u
+      left join public.workspaces w on w.owner_user_id = u.id
+      where lower(u.email) = ${byEmail}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function reconcileBillingRecoveryForEvent(input: {
+  event: Stripe.Event;
+  status: string | null;
+  paymentFailedSignal: boolean;
+  paymentSucceededSignal: boolean;
+  hints: BillingContextHints;
+}): Promise<void> {
+  const context = await resolveBillingWorkspaceContext(input.hints);
+  const stripeObjectId = readStripeObjectId(input.event);
+  const normalizedStatus = normalizeBillingStatus(input.status);
+
+  let transitionIntoRecovery = false;
+  let resolvedStatus = normalizedStatus;
+
+  if (context?.workspaceId) {
+    const update = await upsertDunningStateFromStripeSignal({
+      workspaceId: context.workspaceId,
+      userEmail: input.hints.userEmail ?? context.userEmail,
+      status: input.status,
+      paymentFailedSignal: input.paymentFailedSignal,
+      paymentSucceededSignal: input.paymentSucceededSignal,
+    });
+    transitionIntoRecovery = update.transitionedIntoRecovery;
+    resolvedStatus = update.current.subscriptionStatus;
+  }
+
+  await insertBillingEvent({
+    workspaceId: context?.workspaceId ?? null,
+    userEmail: input.hints.userEmail ?? context?.userEmail ?? null,
+    eventType: input.event.type,
+    stripeEventId: input.event.id,
+    stripeObjectId,
+    status: resolvedStatus,
+    meta: {
+      account: input.event.account ?? null,
+      livemode: input.event.livemode,
+      paymentFailedSignal: input.paymentFailedSignal,
+      paymentSucceededSignal: input.paymentSucceededSignal,
+      rawStatus: input.status ?? null,
+    },
+  });
+
+  if (transitionIntoRecovery && context?.workspaceId) {
+    try {
+      await maybeSendRecoveryEmailForWorkspace({
+        workspaceId: context.workspaceId,
+      });
+    } catch (error) {
+      const message = stringifyErrorMessage(error);
+      console.error("[billing recovery] failed to send recovery email", {
+        eventId: input.event.id,
+        workspaceId: context.workspaceId,
+        message,
+      });
+      await logRecoveryEmailFailure({
+        workspaceId: context.workspaceId,
+        userEmail: context.userEmail,
+        error: message,
+      });
+    }
+  }
 }
 
 function parseCustomerId(
@@ -838,9 +1036,23 @@ async function updateInvoiceActualFeeDetailsFromCharge({
 async function processEvent(event: Stripe.Event): Promise<void> {
   let resolvedInvoiceId: string | null = null;
   let invoiceUpdateRows = 0;
+  let billingStatusSignal: string | null = null;
+  let paymentFailedSignal = false;
+  let paymentSucceededSignal = false;
+  const billingContextHints: BillingContextHints = {};
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
+    billingContextHints.userId = session.metadata?.userId ?? null;
+    billingContextHints.userEmail =
+      session.customer_email ||
+      session.customer_details?.email ||
+      session.metadata?.userEmail ||
+      null;
+    billingContextHints.customerId = parseCustomerId(session.customer);
+    billingContextHints.subscriptionId =
+      typeof session.subscription === "string" ? session.subscription : null;
+    billingContextHints.workspaceId = session.metadata?.workspaceId ?? null;
 
     if (session.mode === "subscription") {
       const rawPlan = session.metadata?.plan ?? null;
@@ -857,6 +1069,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       const customerId = parseCustomerId(session.customer);
       const subscriptionId =
         typeof session.subscription === "string" ? session.subscription : null;
+      billingStatusSignal = "active";
+      paymentSucceededSignal = true;
 
       if (metadataUserId) {
         const updated = await sql`
@@ -1008,6 +1222,13 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     const customerId =
       typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
     const status = String(sub.status).trim().toLowerCase();
+    billingStatusSignal = status;
+    billingContextHints.subscriptionId = sub.id;
+    billingContextHints.customerId =
+      typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
+    billingContextHints.userId = sub.metadata?.userId ?? null;
+    billingContextHints.userEmail = sub.metadata?.userEmail ?? null;
+    billingContextHints.workspaceId = sub.metadata?.workspaceId ?? null;
     const cancelRequested = !!sub.cancel_at_period_end || sub.cancel_at != null;
     const currentPeriodEndUnix =
       (sub as any).current_period_end ??
@@ -1102,6 +1323,13 @@ async function processEvent(event: Stripe.Event): Promise<void> {
 
   if (event.type === "customer.subscription.deleted") {
     const sub = event.data.object as Stripe.Subscription;
+    billingStatusSignal = "canceled";
+    billingContextHints.subscriptionId = sub.id;
+    billingContextHints.customerId =
+      typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
+    billingContextHints.userId = sub.metadata?.userId ?? null;
+    billingContextHints.userEmail = sub.metadata?.userEmail ?? null;
+    billingContextHints.workspaceId = sub.metadata?.workspaceId ?? null;
 
     const updated = await sql`
       update public.users
@@ -1120,6 +1348,72 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       rows: updated.length,
       user: updated[0] ?? null,
     });
+  }
+
+  if (event.type === "invoice.payment_failed") {
+    const stripeInvoice = event.data.object as Stripe.Invoice;
+    const invoiceAny = stripeInvoice as any;
+    const subscriptionId =
+      typeof invoiceAny.subscription === "string"
+        ? invoiceAny.subscription
+        : invoiceAny.subscription?.id ?? null;
+    const customerId =
+      typeof stripeInvoice.customer === "string"
+        ? stripeInvoice.customer
+        : stripeInvoice.customer?.id ?? null;
+
+    billingStatusSignal = "past_due";
+    paymentFailedSignal = true;
+    billingContextHints.subscriptionId = subscriptionId;
+    billingContextHints.customerId = customerId;
+    billingContextHints.userEmail = stripeInvoice.customer_email ?? null;
+
+    if (subscriptionId) {
+      await sql`
+        update public.users
+        set subscription_status = 'past_due'
+        where stripe_subscription_id = ${subscriptionId}
+      `;
+    } else if (customerId) {
+      await sql`
+        update public.users
+        set subscription_status = 'past_due'
+        where stripe_customer_id = ${customerId}
+      `;
+    }
+  }
+
+  if (event.type === "invoice.payment_succeeded") {
+    const stripeInvoice = event.data.object as Stripe.Invoice;
+    const invoiceAny = stripeInvoice as any;
+    const subscriptionId =
+      typeof invoiceAny.subscription === "string"
+        ? invoiceAny.subscription
+        : invoiceAny.subscription?.id ?? null;
+    const customerId =
+      typeof stripeInvoice.customer === "string"
+        ? stripeInvoice.customer
+        : stripeInvoice.customer?.id ?? null;
+
+    billingStatusSignal = "active";
+    paymentSucceededSignal = true;
+    billingContextHints.subscriptionId = subscriptionId;
+    billingContextHints.customerId = customerId;
+    billingContextHints.userEmail = stripeInvoice.customer_email ?? null;
+
+    if (subscriptionId) {
+      await sql`
+        update public.users
+        set subscription_status = 'active'
+        where stripe_subscription_id = ${subscriptionId}
+      `;
+    } else if (customerId) {
+      await sql`
+        update public.users
+        set subscription_status = 'active'
+        where stripe_customer_id = ${customerId}
+      `;
+    }
   }
 
   if (event.type === "payment_intent.succeeded") {
@@ -1752,6 +2046,19 @@ async function processEvent(event: Stripe.Event): Promise<void> {
         details_submitted: account.details_submitted,
       });
     }
+  }
+
+  const shouldReconcileBillingRecovery =
+    billingStatusSignal !== null || paymentFailedSignal || paymentSucceededSignal;
+
+  if (shouldReconcileBillingRecovery) {
+    await reconcileBillingRecoveryForEvent({
+      event,
+      status: billingStatusSignal,
+      paymentFailedSignal,
+      paymentSucceededSignal,
+      hints: billingContextHints,
+    });
   }
 
   debugLog("[stripe webhook] reconcile debug", {

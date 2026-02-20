@@ -26,6 +26,12 @@ import { CARD_INTERACTIVE } from '@/app/ui/theme/tokens';
 import { logFunnelEvent } from '@/app/lib/funnel-events';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import { getStripeConfigState } from '@/app/lib/stripe-guard';
+import {
+  fetchLatestBillingEventForWorkspace,
+  fetchWorkspaceDunningState,
+  normalizeBillingStatus,
+} from '@/app/lib/billing-dunning';
+import SendRecoveryEmailButton from './send-recovery-email-button';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -43,6 +49,30 @@ function formatEtDateTime(value: Date | string | null | undefined) {
     timeStyle: 'short',
     timeZone: 'Europe/Tallinn',
   }).format(d);
+}
+
+function formatRelativeTime(value: Date | string | null | undefined) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const diffMs = date.getTime() - Date.now();
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
+  const absMinutes = Math.abs(diffMinutes);
+  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+  if (absMinutes < 60) {
+    return formatter.format(diffMinutes, 'minute');
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  const absHours = Math.abs(diffHours);
+  if (absHours < 24) {
+    return formatter.format(diffHours, 'hour');
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return formatter.format(diffDays, 'day');
 }
 
 export default async function BillingSettingsPage(props: {
@@ -96,6 +126,10 @@ export default async function BillingSettingsPage(props: {
   const workspaceContext = await ensureWorkspaceContextForCurrentUser();
   const canRunSelfCheck =
     workspaceContext.userRole === 'owner' || workspaceContext.userRole === 'admin';
+  const [dunningState, latestBillingEvent] = await Promise.all([
+    fetchWorkspaceDunningState(workspaceContext.workspaceId),
+    fetchLatestBillingEventForWorkspace(workspaceContext.workspaceId),
+  ]);
   const stripeState = getStripeConfigState();
   const latestWebhook = canRunSelfCheck
     ? (
@@ -122,6 +156,12 @@ export default async function BillingSettingsPage(props: {
     : null;
 
   const periodEndLabel = formatEtDateTime(currentPeriodEnd);
+  const paymentStatus = normalizeBillingStatus(
+    dunningState?.subscriptionStatus ?? subscriptionStatus,
+  );
+  const recoveryRequired = Boolean(dunningState?.recoveryRequired);
+  const lastPaymentFailureLabel = formatEtDateTime(dunningState?.lastPaymentFailureAt);
+  const latestBillingEventRelative = formatRelativeTime(latestBillingEvent?.createdAt);
   const planConfig = PLAN_CONFIG[plan];
   const isUnlimited = !Number.isFinite(planConfig.maxPerMonth);
   const connectStatusPill: {
@@ -245,6 +285,11 @@ export default async function BillingSettingsPage(props: {
         </div>
 
         <div className="grid gap-5 md:grid-cols-3">
+          {recoveryRequired ? (
+            <div className="md:col-span-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100">
+              Payment recovery required. You can still review plans, but fix the billing issue first to avoid service interruptions.
+            </div>
+          ) : null}
           {planCards.map((planCard) => {
             const isCurrent = plan === planCard.id && isPro;
             const isAnnual = interval === 'annual';
@@ -306,11 +351,64 @@ export default async function BillingSettingsPage(props: {
       </section>
 
       <PricingPanel className="space-y-3">
+        {recoveryRequired ? (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100">
+            Billing warning: resolve your failed payment before making plan changes.
+          </p>
+        ) : null}
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Manage billing</h3>
         <p className="text-sm text-slate-600 dark:text-neutral-300">
           Open Stripe billing to update payment details, cancel, or view invoice history.
         </p>
-        <ManageBillingButton label="Open billing portal" />
+        <ManageBillingButton label={recoveryRequired ? 'Fix payment' : 'Open billing portal'} />
+      </PricingPanel>
+
+      <PricingPanel className="space-y-3">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Payment status</h3>
+        <div className="grid gap-2 text-sm text-slate-700 dark:text-neutral-300">
+          <p>
+            Subscription status:{' '}
+            <span className="font-medium text-slate-900 dark:text-neutral-100">
+              {paymentStatus}
+            </span>
+          </p>
+          <p>
+            Recovery required:{' '}
+            <span className="font-medium text-slate-900 dark:text-neutral-100">
+              {recoveryRequired ? 'yes' : 'no'}
+            </span>
+          </p>
+          {lastPaymentFailureLabel ? (
+            <p>
+              Last payment failure:{' '}
+              <span className="font-medium text-slate-900 dark:text-neutral-100">
+                {lastPaymentFailureLabel}
+              </span>
+            </p>
+          ) : null}
+          {latestBillingEvent ? (
+            <p>
+              Latest billing event:{' '}
+              <span className="font-medium text-slate-900 dark:text-neutral-100">
+                {latestBillingEvent.eventType}
+                {latestBillingEventRelative ? ` (${latestBillingEventRelative})` : ''}
+              </span>
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ManageBillingButton
+            label={recoveryRequired ? 'Fix payment' : 'Open billing portal'}
+            fullWidth={false}
+          />
+          {recoveryRequired && canRunSelfCheck ? <SendRecoveryEmailButton /> : null}
+        </div>
+        <Link
+          href="/dashboard/settings/billing-events"
+          className={`${secondaryButtonClasses} w-fit rounded-full`}
+        >
+          Open billing events
+        </Link>
       </PricingPanel>
 
       {canRunSelfCheck ? (

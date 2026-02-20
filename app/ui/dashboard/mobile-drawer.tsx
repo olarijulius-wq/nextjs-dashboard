@@ -24,6 +24,7 @@ type MobileDrawerProps = {
   onOpenChange: (open: boolean) => void;
   userEmail: string;
   logoutAction: () => Promise<void>;
+  showBillingRecoveryWarning?: boolean;
 };
 
 export default function MobileDrawer({
@@ -31,6 +32,7 @@ export default function MobileDrawer({
   onOpenChange,
   userEmail,
   logoutAction,
+  showBillingRecoveryWarning = false,
 }: MobileDrawerProps) {
   const pathname = usePathname();
   const mainLinks = getDashboardLinks(userEmail);
@@ -109,6 +111,11 @@ export default function MobileDrawer({
                   >
                     <LinkIcon className="h-6 w-6 shrink-0" />
                     <span>{link.name}</span>
+                    {showBillingRecoveryWarning && link.proOnly ? (
+                      <span className="rounded-full border border-amber-400/60 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                        Billing
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}

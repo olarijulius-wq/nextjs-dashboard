@@ -5,8 +5,10 @@ import { Button } from '@/app/ui/button';
 
 export default function ManageBillingButton({
   label = 'Manage billing / Cancel',
+  fullWidth = true,
 }: {
   label?: string;
+  fullWidth?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +30,12 @@ export default function ManageBillingButton({
   }
 
   return (
-    <div className="w-full">
+    <div className={fullWidth ? 'w-full' : 'w-auto'}>
       <Button
         type="button"
         onClick={openPortal}
         aria-disabled={loading}
-        className="w-full rounded-full"
+        className={`${fullWidth ? 'w-full' : 'w-auto'} rounded-full`}
       >
         {loading ? 'Opening Billing Portal…' : label}
       </Button>

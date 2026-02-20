@@ -13,6 +13,8 @@ import { auth } from '@/auth';
 import ThemeToggleMenuItem from '@/app/ui/dashboard/theme-toggle-menu-item';
 import MobileNav from '@/app/ui/dashboard/mobile-nav';
 import FitTextEmail from '@/app/ui/dashboard/fit-text-email';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
+import { fetchWorkspaceDunningState } from '@/app/lib/billing-dunning';
 import {
   NEUTRAL_FOCUS_RING_CLASSES,
   NEUTRAL_INACTIVE_ITEM_CLASSES,
@@ -32,11 +34,23 @@ export default async function SideNav() {
     'use server';
     await signOut({ redirectTo: '/' });
   };
+  let showBillingRecoveryWarning = false;
+  try {
+    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    const dunningState = await fetchWorkspaceDunningState(workspaceContext.workspaceId);
+    showBillingRecoveryWarning = Boolean(dunningState?.recoveryRequired);
+  } catch {
+    showBillingRecoveryWarning = false;
+  }
   const accountMenuItemClasses = `flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 transition dark:text-neutral-300 ${NEUTRAL_INACTIVE_ITEM_CLASSES} ${NEUTRAL_FOCUS_RING_CLASSES}`;
 
   return (
     <div className="flex h-full flex-col gap-2 px-3 py-4 md:px-2">
-      <MobileNav userEmail={userEmail} logoutAction={logoutAction} />
+      <MobileNav
+        userEmail={userEmail}
+        logoutAction={logoutAction}
+        showBillingRecoveryWarning={showBillingRecoveryWarning}
+      />
 
       <div className="hidden md:flex md:h-full md:flex-col">
         <Link
@@ -48,7 +62,10 @@ export default async function SideNav() {
           </div>
         </Link>
         <div className="flex grow flex-row justify-between space-x-2 md:flex-col md:space-x-0 md:space-y-2">
-          <NavLinks userEmail={userEmail} />
+          <NavLinks
+            userEmail={userEmail}
+            showBillingRecoveryWarning={showBillingRecoveryWarning}
+          />
           <div className="hidden h-auto w-full grow rounded-md border border-neutral-200 bg-white md:block dark:border-neutral-900 dark:bg-black"></div>
           <details className="group relative">
             <summary className="flex h-[52px] w-full cursor-pointer list-none items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 text-left text-sm text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-900 dark:bg-black dark:text-neutral-200 dark:hover:border-neutral-800 dark:hover:bg-neutral-950">

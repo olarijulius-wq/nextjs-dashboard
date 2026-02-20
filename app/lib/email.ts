@@ -264,3 +264,49 @@ export async function sendRefundRequestNotificationEmail(options: {
     throw new Error(`Resend failed: ${detail}`);
   }
 }
+
+export async function sendBillingRecoveryEmail(options: {
+  to: string;
+  billingUrl: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('[billing recovery email stub]', options.to);
+    return;
+  }
+
+  const from = process.env.REMINDER_FROM_EMAIL ?? 'Invoicify <noreply@invoicify.dev>';
+  const subject = 'Action required: Fix payment to keep Lateless running';
+  const bodyHtml = `
+    <p>Your Lateless subscription has a payment issue and needs attention.</p>
+    <p>Update your payment method or retry payment to avoid disruption.</p>
+    <p><a href="${options.billingUrl}">Open billing settings</a></p>
+  `;
+  const bodyText = [
+    'Your Lateless subscription has a payment issue and needs attention.',
+    'Update your payment method or retry payment to avoid disruption.',
+    '',
+    `Open billing settings: ${options.billingUrl}`,
+  ].join('\n');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: options.to,
+      subject,
+      html: bodyHtml,
+      text: bodyText,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Resend failed: ${detail}`);
+  }
+}

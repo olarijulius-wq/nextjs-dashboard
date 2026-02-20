@@ -7,9 +7,14 @@ import MobileDrawer from '@/app/ui/dashboard/mobile-drawer';
 type MobileNavProps = {
   userEmail: string;
   logoutAction: () => Promise<void>;
+  showBillingRecoveryWarning?: boolean;
 };
 
-export default function MobileNav({ userEmail, logoutAction }: MobileNavProps) {
+export default function MobileNav({
+  userEmail,
+  logoutAction,
+  showBillingRecoveryWarning = false,
+}: MobileNavProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
@@ -30,6 +35,7 @@ export default function MobileNav({ userEmail, logoutAction }: MobileNavProps) {
         onOpenChange={setMobileNavOpen}
         userEmail={userEmail}
         logoutAction={logoutAction}
+        showBillingRecoveryWarning={showBillingRecoveryWarning}
       />
     </>
   );

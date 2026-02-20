@@ -7,9 +7,13 @@ import { getDashboardLinks } from '@/app/ui/dashboard/nav-links-data';
 
 type NavLinksProps = {
   userEmail?: string;
+  showBillingRecoveryWarning?: boolean;
 };
 
-export default function NavLinks({ userEmail = '' }: NavLinksProps) {
+export default function NavLinks({
+  userEmail = '',
+  showBillingRecoveryWarning = false,
+}: NavLinksProps) {
   const pathname = usePathname();
   const dashboardLinks = getDashboardLinks(userEmail);
 
@@ -36,6 +40,11 @@ export default function NavLinks({ userEmail = '' }: NavLinksProps) {
           >
             <LinkIcon className="w-5" />
             <p className="hidden md:block">{link.name}</p>
+            {showBillingRecoveryWarning && link.proOnly ? (
+              <span className="hidden rounded-full border border-amber-400/60 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-900 md:inline-flex dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                billing
+              </span>
+            ) : null}
           </Link>
         );
       })}

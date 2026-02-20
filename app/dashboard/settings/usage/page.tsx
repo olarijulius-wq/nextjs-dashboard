@@ -6,6 +6,7 @@ import {
   fetchUsageTimeseries,
   fetchUsageTopReasons,
   isUsageMigrationRequiredError,
+  normalizeUsageInvoiceMetric,
 } from '@/app/lib/usage';
 import {
   ensureWorkspaceContextForCurrentUser,
@@ -52,14 +53,28 @@ function emptySummary() {
   };
 }
 
-export default async function UsageSettingsPage() {
+export default async function UsageSettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ metric?: string }>;
+}) {
+  const resolvedSearchParams = await searchParams;
   const usage = await fetchUserPlanAndUsage();
   const plan = PLAN_CONFIG[usage.plan];
   const isUnlimited = !Number.isFinite(usage.maxPerMonth);
   const { monthStart, monthEnd } = getCurrentMonthRange(new Date());
+  const invoiceMetric = normalizeUsageInvoiceMetric(resolvedSearchParams?.metric);
 
   let summary = emptySummary();
-  let timeseries: Awaited<ReturnType<typeof fetchUsageTimeseries>> = [];
+  let timeseries: Awaited<ReturnType<typeof fetchUsageTimeseries>> = {
+    points: [],
+    debug: {
+      scopeKey: 'user_email',
+      normalizedDateColumn: 'invoices.created_at',
+      timezone: 'Europe/Tallinn',
+      invoiceMetric,
+    },
+  };
   let topSkipReasons: Awaited<ReturnType<typeof fetchUsageTopReasons>> = [];
   let usageMigrationRequired = false;
   let teamMigrationRequired = false;
@@ -68,7 +83,12 @@ export default async function UsageSettingsPage() {
     const context = await ensureWorkspaceContextForCurrentUser();
     [summary, timeseries, topSkipReasons] = await Promise.all([
       fetchUsageSummary(context.workspaceId, monthStart, monthEnd),
-      fetchUsageTimeseries(context.workspaceId, 30),
+      fetchUsageTimeseries({
+        workspaceId: context.workspaceId,
+        userEmail: context.userEmail,
+        days: 30,
+        invoiceMetric,
+      }),
       fetchUsageTopReasons(context.workspaceId, monthStart, monthEnd),
     ]);
   } catch (error) {
@@ -81,7 +101,7 @@ export default async function UsageSettingsPage() {
     }
   }
 
-  const hasTimeseriesData = timeseries.some(
+  const hasTimeseriesData = timeseries.points.some(
     (point) =>
       point.invoiceCreated > 0 ||
       point.reminderSent > 0 ||
@@ -182,6 +202,33 @@ export default async function UsageSettingsPage() {
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           Daily counts for invoice creation and reminders.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-500 dark:text-slate-400">Invoice metric:</span>
+          {(['created', 'sent', 'paid'] as const).map((metric) => {
+            const active = invoiceMetric === metric;
+            return (
+              <a
+                key={metric}
+                href={`/dashboard/settings/usage?metric=${metric}`}
+                className={`rounded-full border px-2 py-1 transition ${
+                  active
+                    ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                    : 'border-neutral-300 text-slate-600 hover:border-slate-500 hover:text-slate-900 dark:border-neutral-700 dark:text-slate-300 dark:hover:border-slate-300 dark:hover:text-slate-100'
+                }`}
+                aria-current={active ? 'page' : undefined}
+              >
+                {metric}
+              </a>
+            );
+          })}
+        </div>
+        {process.env.NODE_ENV === 'development' ? (
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Debug: scope={timeseries.debug.scopeKey}, date_column=
+            {timeseries.debug.normalizedDateColumn}, timezone={timeseries.debug.timezone},
+            metric={timeseries.debug.invoiceMetric}
+          </p>
+        ) : null}
 
         {!hasTimeseriesData ? (
           <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">
@@ -200,7 +247,7 @@ export default async function UsageSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...timeseries].reverse().map((point) => (
+                {[...timeseries.points].reverse().map((point) => (
                   <tr
                     key={point.date}
                     className="border-t border-neutral-200/70 text-slate-700 dark:border-neutral-800 dark:text-slate-300"

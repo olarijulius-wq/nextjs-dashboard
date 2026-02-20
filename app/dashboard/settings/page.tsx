@@ -26,6 +26,11 @@ const settingCards = [
     description: 'Manage plan, subscription, and Stripe billing.',
   },
   {
+    title: 'Billing events',
+    href: '/dashboard/settings/billing-events',
+    description: 'Inspect payment failures, recoveries, and portal activity.',
+  },
+  {
     title: 'Team',
     href: '/dashboard/settings/team',
     description: 'Invite teammates and manage roles.',

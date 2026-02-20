@@ -14,6 +14,7 @@ const baseSections = [
   { name: 'Overview', href: '/dashboard/settings' },
   { name: 'Usage', href: '/dashboard/settings/usage' },
   { name: 'Billing', href: '/dashboard/settings/billing' },
+  { name: 'Billing events', href: '/dashboard/settings/billing-events' },
   { name: 'Pricing & Fees', href: '/dashboard/settings/pricing-fees' },
   { name: 'Payouts', href: '/dashboard/settings/payouts' },
   { name: 'Refunds', href: '/dashboard/settings/refunds' },
