@@ -14,10 +14,15 @@ import {
   assertStripeConfig,
   normalizeStripeConfigError,
 } from '@/app/lib/stripe-guard';
+import {
+  ensureWorkspaceContextForCurrentUser,
+  fetchWorkspaceMembershipsForCurrentUser,
+} from '@/app/lib/workspaces';
 
 const checkoutParamsSchema = z.object({
   plan: z.string().trim().toLowerCase().optional(),
   interval: z.enum(['monthly', 'annual']).default('monthly'),
+  workspaceId: z.string().trim().optional(),
 });
 
 export async function POST(req: Request) {
@@ -32,15 +37,21 @@ export async function POST(req: Request) {
   const url = new URL(req.url);
   const queryPlan = url.searchParams.get('plan') ?? undefined;
   const queryInterval = url.searchParams.get('interval') ?? undefined;
-  let body: { plan?: string; interval?: BillingInterval } = {};
+  const queryWorkspaceId = url.searchParams.get('workspaceId') ?? undefined;
+  let body: { plan?: string; interval?: BillingInterval; workspaceId?: string } = {};
   try {
-    body = (await req.json()) as { plan?: string; interval?: BillingInterval };
+    body = (await req.json()) as {
+      plan?: string;
+      interval?: BillingInterval;
+      workspaceId?: string;
+    };
   } catch {
     body = {};
   }
   const parsed = checkoutParamsSchema.safeParse({
     plan: queryPlan ?? body.plan,
     interval: queryInterval ?? body.interval,
+    workspaceId: queryWorkspaceId ?? body.workspaceId,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid interval' }, { status: 400 });
@@ -48,6 +59,8 @@ export async function POST(req: Request) {
 
   const requestedPlan = parsed.data.plan ?? '';
   const interval = parsed.data.interval;
+  const requestedWorkspaceId = parsed.data.workspaceId?.trim() || null;
+  const userId = (session.user as { id?: string }).id ?? '';
 
   const normalizedPlan = normalizePlan(requestedPlan);
   const plan: PlanId = requestedPlan ? normalizedPlan : 'pro';
@@ -75,6 +88,21 @@ export async function POST(req: Request) {
       : 'http://localhost:3000');
 
   try {
+    let workspaceId = '';
+    try {
+      const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+      workspaceId = workspaceContext.workspaceId;
+
+      if (requestedWorkspaceId) {
+        const memberships = await fetchWorkspaceMembershipsForCurrentUser();
+        if (memberships.some((membership) => membership.workspaceId === requestedWorkspaceId)) {
+          workspaceId = requestedWorkspaceId;
+        }
+      }
+    } catch {
+      workspaceId = '';
+    }
+
     assertStripeConfig();
     const allowPromotionCodes = process.env.STRIPE_ALLOW_PROMO_CODES === '1';
 
@@ -93,16 +121,18 @@ export async function POST(req: Request) {
       customer_email: normalizedEmail,
       metadata: {
         userEmail: normalizedEmail,
-        userId: (session.user as { id?: string }).id ?? '',
+        userId,
         plan,
         interval,
+        workspaceId,
       },
       subscription_data: {
         metadata: {
           userEmail: normalizedEmail,
-          userId: (session.user as { id?: string }).id ?? '',
+          userId,
           plan,
           interval,
+          workspaceId,
         },
       },
 
