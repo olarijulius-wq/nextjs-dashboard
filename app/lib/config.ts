@@ -118,6 +118,19 @@ export function normalizePaidPlan(plan: string | null | undefined): PaidPlanId |
   return normalized === 'free' ? null : normalized;
 }
 
+export function planFromStripePriceLookupKey(
+  lookupKey: string | null | undefined,
+): PaidPlanId | null {
+  if (!lookupKey) return null;
+  const normalized = lookupKey.trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (/(^|[^a-z])solo([^a-z]|$)/.test(normalized)) return 'solo';
+  if (/(^|[^a-z])pro([^a-z]|$)/.test(normalized)) return 'pro';
+  if (/(^|[^a-z])studio([^a-z]|$)/.test(normalized)) return 'studio';
+  return null;
+}
+
 export function isActiveSubscription(status: string | null | undefined) {
   return status === 'active' || status === 'trialing';
 }
@@ -162,6 +175,7 @@ export function planFromStripeProductId(
 export function resolvePaidPlanFromStripe(input: {
   metadataPlan?: string | null;
   priceId?: string | null;
+  priceLookupKey?: string | null;
   productId?: string | null;
   productMetadataPlan?: string | null;
 }): PaidPlanId | null {
@@ -170,6 +184,9 @@ export function resolvePaidPlanFromStripe(input: {
 
   const planFromProductMetadata = normalizePaidPlan(input.productMetadataPlan);
   if (planFromProductMetadata) return planFromProductMetadata;
+
+  const planFromLookupKey = planFromStripePriceLookupKey(input.priceLookupKey);
+  if (planFromLookupKey) return planFromLookupKey;
 
   const planFromPrice = planFromStripePriceId(input.priceId);
   if (planFromPrice && planFromPrice !== 'free') return planFromPrice;

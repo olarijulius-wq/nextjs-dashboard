@@ -219,14 +219,6 @@ function parseCustomerId(
   return parseStripeId(customer);
 }
 
-function readProductMetadataPlan(
-  product: Stripe.Price["product"] | null | undefined,
-): string | null {
-  if (!product || typeof product === "string") return null;
-  if ("deleted" in product && product.deleted) return null;
-  return product.metadata?.plan ?? null;
-}
-
 function readInvoiceReferenceId(
   invoice:
     | Stripe.Checkout.Session["invoice"]
@@ -1323,14 +1315,13 @@ async function processEvent(event: Stripe.Event): Promise<void> {
 
         const stripeSubscription = await stripe.subscriptions.retrieve(
           session.subscription,
-          { expand: ["items.data.price.product", "customer"] },
+          { expand: ["items.data.price"] },
         );
         const checkoutPrice = stripeSubscription.items?.data?.[0]?.price;
         const normalizedPlan = resolvePaidPlanFromStripe({
           metadataPlan: session.metadata?.plan ?? stripeSubscription.metadata?.plan ?? null,
           priceId: checkoutPrice?.id ?? null,
-          productId: parseStripeId(checkoutPrice?.product),
-          productMetadataPlan: readProductMetadataPlan(checkoutPrice?.product),
+          priceLookupKey: checkoutPrice?.lookup_key ?? null,
         });
         const interval = toStoredBillingInterval(session.metadata?.interval ?? null);
         const customerId = parseCustomerId(stripeSubscription.customer ?? session.customer);
@@ -1470,8 +1461,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     const plan = resolvePaidPlanFromStripe({
       metadataPlan: sub.metadata?.plan ?? null,
       priceId: subscriptionPrice?.id ?? null,
-      productId: parseStripeId(subscriptionPrice?.product),
-      productMetadataPlan: readProductMetadataPlan(subscriptionPrice?.product),
+      priceLookupKey: subscriptionPrice?.lookup_key ?? null,
     });
     const interval = toStoredBillingInterval(
       sub.items?.data?.[0]?.price?.recurring?.interval ?? null,
@@ -1697,8 +1687,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
         const plan = resolvePaidPlanFromStripe({
           metadataPlan,
           priceId: linePrice?.id ?? null,
-          productId: parseStripeId(linePrice?.product),
-          productMetadataPlan: readProductMetadataPlan(linePrice?.product),
+          priceLookupKey: linePrice?.lookup_key ?? null,
         });
         const stripeInterval =
           linePrice?.recurring?.interval ?? null;

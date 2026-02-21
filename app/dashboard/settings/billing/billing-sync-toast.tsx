@@ -20,11 +20,12 @@ type ReconcilePayload = {
   code?: string;
   message?: string;
   effective?: boolean;
+  build?: string;
+  requestedPlan?: string;
   wrote?: unknown;
   readback?: unknown;
   workspaceId?: string;
   userId?: string;
-  plan?: string;
 };
 
 export default function BillingSyncToast({ enabled, sessionId }: BillingSyncToastProps) {
@@ -50,27 +51,35 @@ export default function BillingSyncToast({ enabled, sessionId }: BillingSyncToas
           body: JSON.stringify({ sessionId }),
         });
         const payload = (await res.json()) as ReconcilePayload;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[billing sync] reconcile response', {
+            status: res.status,
+            payload,
+          });
+        }
         if (cancelled) return;
 
-        if (res.ok && payload?.ok && payload.effective !== false) {
+        if (res.ok && payload?.ok === true && payload?.effective === true) {
           setState('synced');
           router.refresh();
           return;
         }
 
-        const noEffect = payload?.ok && payload?.effective === false;
-        const code = noEffect ? 'PLAN_SYNC_NO_EFFECT' : (payload?.code ?? null);
-        const message = noEffect
-          ? 'Sync failed: no DB rows updated (PLAN_SYNC_NO_EFFECT)'
-          : (payload?.message ?? null);
+        const code = payload?.code ?? (payload?.effective === false ? 'PLAN_SYNC_NO_EFFECT' : 'RECONCILE_FAILED');
+        const message =
+          payload?.message ??
+          (payload?.effective === false
+            ? 'Plan sync did not update the canonical billing plan.'
+            : 'Reconcile failed.');
 
         setFailure({
           code,
           message,
           debug: {
+            build: payload?.build ?? null,
             workspaceId: payload?.workspaceId ?? null,
             userId: payload?.userId ?? null,
-            plan: payload?.plan ?? null,
+            requestedPlan: payload?.requestedPlan ?? null,
             wrote: payload?.wrote ?? null,
             readback: payload?.readback ?? null,
           },
@@ -79,8 +88,8 @@ export default function BillingSyncToast({ enabled, sessionId }: BillingSyncToas
       } catch {
         if (!cancelled) {
           setFailure({
-            code: null,
-            message: 'Payment confirmed. Plan sync pending.',
+            code: 'RECONCILE_NETWORK_ERROR',
+            message: 'Payment confirmed, but plan sync check failed. Please retry shortly.',
             debug: null,
           });
           setState('failed');
@@ -114,10 +123,9 @@ export default function BillingSyncToast({ enabled, sessionId }: BillingSyncToas
   const message = useMemo(() => {
     if (state === 'synced') return 'Plan synced.';
     if (state === 'failed') {
-      if (failure?.code || failure?.message) {
-        return [failure.code, failure.message].filter(Boolean).join(': ');
-      }
-      return 'Payment confirmed. Plan sync pending.';
+      const code = failure?.code ?? 'RECONCILE_FAILED';
+      const description = failure?.message ?? 'Plan sync failed.';
+      return `Plan sync failed (${code}): ${description}`;
     }
     return null;
   }, [failure, state]);

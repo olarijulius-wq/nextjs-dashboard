@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import postgres from 'postgres';
 import UpgradeButton from '../upgrade-button';
 import ManageBillingButton from '../manage-billing-button';
@@ -41,6 +42,10 @@ const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 export const metadata: Metadata = {
   title: 'Billing Settings',
 };
+
+function isUnauthorizedError(error: unknown) {
+  return error instanceof Error && error.message === 'Unauthorized';
+}
 
 function formatEtDateTime(value: Date | string | null | undefined) {
   if (!value) return null;
@@ -96,6 +101,28 @@ export default async function BillingSettingsPage(props: {
     plan?: string;
   }>;
 }) {
+  const userEmail = await (async () => {
+    try {
+      return await requireUserEmail();
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        redirect('/login?callbackUrl=/dashboard/settings/billing');
+      }
+      throw error;
+    }
+  })();
+
+  const workspaceContext = await (async () => {
+    try {
+      return await ensureWorkspaceContextForCurrentUser();
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        redirect('/login?callbackUrl=/dashboard/settings/billing');
+      }
+      throw error;
+    }
+  })();
+
   const searchParams = await props.searchParams;
   const success = searchParams?.success === '1';
   const canceled = searchParams?.canceled === '1';
@@ -119,7 +146,6 @@ export default async function BillingSettingsPage(props: {
   const monthlyHref = `/dashboard/settings/billing?${nextMonthlyParams.toString()}`;
   const annualHref = `/dashboard/settings/billing?${nextAnnualParams.toString()}`;
 
-  const userEmail = await requireUserEmail();
   await logFunnelEvent({
     userEmail,
     eventName: 'billing_opened',
@@ -132,10 +158,18 @@ export default async function BillingSettingsPage(props: {
     cancelAtPeriodEnd,
     currentPeriodEnd,
     invoiceCount,
-  } = await fetchUserPlanAndUsage();
+  } = await (async () => {
+    try {
+      return await fetchUserPlanAndUsage();
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        redirect('/login?callbackUrl=/dashboard/settings/billing');
+      }
+      throw error;
+    }
+  })();
   const connectStatus: StripeConnectStatus =
     await fetchStripeConnectStatusForUser(userEmail);
-  const workspaceContext = await ensureWorkspaceContextForCurrentUser();
   const planSource = await readCanonicalWorkspacePlanSource({
     workspaceId: workspaceContext.workspaceId,
     userId: workspaceContext.userId,
@@ -232,7 +266,7 @@ export default async function BillingSettingsPage(props: {
       <BillingSyncToast enabled={success && !!sessionId} sessionId={sessionId} />
       {success && (
         <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
-          Payment successful. {sessionId ? 'Syncing plan...' : 'Your plan is updated.'}
+          Payment successful. {sessionId ? 'Verifying plan sync...' : ''}
         </div>
       )}
 
