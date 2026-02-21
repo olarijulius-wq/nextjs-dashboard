@@ -10,6 +10,64 @@ import {
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
+const STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED = 'STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED';
+
+type StripeErrorDetails = {
+  type: string | null;
+  code: string | null;
+  param: string | null;
+  message: string | null;
+  rawMessage: string | null;
+  rawCode: string | null;
+  requestId: string | null;
+};
+
+class StripeConnectAccountsCreateError extends Error {
+  readonly causeError: unknown;
+
+  constructor(causeError: unknown) {
+    super('Stripe connected account creation failed.');
+    this.causeError = causeError;
+  }
+}
+
+function extractStripeErrorDetails(error: unknown): StripeErrorDetails {
+  const stripeError = error as {
+    type?: string;
+    code?: string;
+    param?: string;
+    message?: string;
+    requestId?: string;
+    raw?: {
+      message?: string;
+      code?: string;
+      requestId?: string;
+    };
+    rawType?: string;
+  } | null;
+
+  return {
+    type: stripeError?.type ?? stripeError?.rawType ?? null,
+    code: stripeError?.code ?? stripeError?.raw?.code ?? null,
+    param: stripeError?.param ?? null,
+    message: stripeError?.message ?? null,
+    rawMessage: stripeError?.raw?.message ?? null,
+    rawCode: stripeError?.raw?.code ?? null,
+    requestId: stripeError?.requestId ?? stripeError?.raw?.requestId ?? null,
+  };
+}
+
+function summarizeStripeConnectAccountsCreateFailure(message: string | null) {
+  const normalized = (message ?? '').toLowerCase();
+  if (
+    normalized.includes('responsibilit') ||
+    (normalized.includes('connect') && normalized.includes('setup'))
+  ) {
+    return 'Stripe Connect setup incomplete in Dashboard (acknowledge responsibilities). Go to Settings → Connect → Platform setup and acknowledge responsibilities for losses/onboarding.';
+  }
+  return message ?? 'Failed to create Stripe Connect account.';
+}
+
 export async function POST(req: Request) {
   let userEmail = '';
   try {
@@ -66,15 +124,21 @@ export async function POST(req: Request) {
     }
 
     if (shouldCreateNewAccount) {
-      const account = await stripe.accounts.create({
-        type: 'express',
-        email: userEmail,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-      });
-      accountId = account.id;
+      let createdAccountId: string | null = null;
+      try {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          email: userEmail,
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+        });
+        createdAccountId = account.id;
+      } catch (createError) {
+        throw new StripeConnectAccountsCreateError(createError);
+      }
+      accountId = createdAccountId;
 
       await sql`
         update public.users
@@ -99,10 +163,40 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: accountLink.url });
   } catch (err: unknown) {
+    if (err instanceof StripeConnectAccountsCreateError) {
+      const details = extractStripeErrorDetails(err.causeError);
+      const stripeMessage = details.rawMessage ?? details.message;
+      const message = summarizeStripeConnectAccountsCreateFailure(stripeMessage);
+
+      console.error('Stripe Connect accounts.create failed', {
+        code: STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED,
+        userEmail,
+        mode,
+        reconnectRequested,
+        stripe: details,
+      });
+
+      return NextResponse.json(
+        {
+          ok: false,
+          code: STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED,
+          message,
+          stripe: {
+            type: details.type,
+            code: details.code,
+            message: stripeMessage,
+            requestId: details.requestId,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     const normalized = normalizeStripeConfigError(err);
     console.error('Error creating Stripe Connect onboarding link', err);
     return NextResponse.json(
       {
+        ok: false,
         error: normalized.message ?? `Failed to start onboarding in ${mode} mode.`,
         guidance: normalized.guidance,
         code: normalized.code,
