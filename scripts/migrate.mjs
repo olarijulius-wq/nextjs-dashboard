@@ -12,6 +12,8 @@ if (!dbUrl) {
 }
 
 const dryRun = process.env.DRY_RUN === '1';
+const allowBaseline = process.env.ALLOW_BASELINE === '1';
+const forceBaseline = process.env.FORCE_BASELINE === '1';
 const actorEmail = (process.env.MIGRATION_ACTOR_EMAIL || process.env.ACTOR_EMAIL || '').trim() || null;
 const appVersion =
   (process.env.APP_VERSION || process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || '')
@@ -28,6 +30,24 @@ function listMigrationFiles() {
   return readdirSync(migrationsDir)
     .filter((name) => name.endsWith('.sql'))
     .sort((a, b) => a.localeCompare(b));
+}
+
+function parseCliArgs(argv) {
+  let baseline = false;
+  let baselineFrom = null;
+
+  for (const arg of argv) {
+    if (arg === '--baseline') {
+      baseline = true;
+      continue;
+    }
+    if (arg.startsWith('--baseline-from=')) {
+      baseline = true;
+      baselineFrom = arg.slice('--baseline-from='.length).trim() || null;
+    }
+  }
+
+  return { baseline, baselineFrom };
 }
 
 async function ensureTrackingTable() {
@@ -47,7 +67,95 @@ async function ensureTrackingTable() {
   `;
 }
 
+async function isLikelyEmptyDatabase() {
+  const rows = await sql`
+    select
+      to_regclass('public.users')::text as users_table,
+      to_regclass('public.invoices')::text as invoices_table
+  `;
+  const row = rows[0];
+  return !row?.users_table && !row?.invoices_table;
+}
+
+async function runBaseline({ baselineFrom }) {
+  if (!allowBaseline) {
+    console.error(
+      'Refusing baseline: set ALLOW_BASELINE=1 to enable --baseline mode. No migrations were executed.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  await ensureTrackingTable();
+
+  const files = listMigrationFiles().filter((filename) =>
+    baselineFrom ? filename.localeCompare(baselineFrom) >= 0 : true,
+  );
+  const appliedRows = await sql`select filename, checksum from public.schema_migrations`;
+  const appliedByFilename = new Map(appliedRows.map((row) => [row.filename, row.checksum]));
+
+  if (appliedRows.length === 0) {
+    const likelyEmptyDb = await isLikelyEmptyDatabase();
+    if (likelyEmptyDb && !forceBaseline) {
+      console.error(
+        'Refusing baseline: schema_migrations is empty and core tables (public.users/public.invoices) were not found. Set FORCE_BASELINE=1 to override.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (likelyEmptyDb && forceBaseline) {
+      console.warn(
+        'FORCE_BASELINE=1 set: proceeding even though schema_migrations is empty and core tables were not detected.',
+      );
+    }
+  }
+
+  let insertedCount = 0;
+  let skippedCount = 0;
+  const insertedFilenames = [];
+
+  for (const filename of files) {
+    const fullPath = resolve(migrationsDir, filename);
+    const content = readFileSync(fullPath, 'utf8');
+    const checksum = sha256(content);
+    const existingChecksum = appliedByFilename.get(filename);
+
+    if (existingChecksum !== undefined) {
+      if (existingChecksum && existingChecksum !== checksum) {
+        throw new Error(`Checksum mismatch for applied migration: ${filename}`);
+      }
+      skippedCount += 1;
+      continue;
+    }
+
+    if (dryRun) {
+      console.log(`[dry-run] baseline insert ${filename}`);
+      insertedCount += 1;
+      insertedFilenames.push(filename);
+      continue;
+    }
+
+    await sql`
+      insert into public.schema_migrations (filename, checksum, actor_email, app_version, applied_at)
+      values (${filename}, ${checksum}, ${actorEmail}, ${appVersion}, now())
+    `;
+    insertedCount += 1;
+    insertedFilenames.push(filename);
+  }
+
+  const firstInserted = insertedFilenames[0] ?? 'none';
+  const lastInserted = insertedFilenames[insertedFilenames.length - 1] ?? 'none';
+  console.log(`Baseline complete. Inserted=${insertedCount}, skipped=${skippedCount}, total=${files.length}`);
+  console.log(`Inserted range: first=${firstInserted}, last=${lastInserted}`);
+}
+
 async function main() {
+  const { baseline, baselineFrom } = parseCliArgs(process.argv.slice(2));
+  if (baseline) {
+    await runBaseline({ baselineFrom });
+    return;
+  }
+
   await ensureTrackingTable();
 
   const files = listMigrationFiles();
