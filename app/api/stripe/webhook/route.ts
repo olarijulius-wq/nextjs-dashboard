@@ -9,7 +9,6 @@ import * as Sentry from "@sentry/nextjs";
 import postgres from "postgres";
 import {
   resolvePaidPlanFromStripe,
-  isActiveSubscription,
 } from "@/app/lib/config";
 import { allowedPayStatuses, canPayInvoiceStatus } from "@/app/lib/invoice-status";
 import { logFunnelEvent } from "@/app/lib/funnel-events";
@@ -26,6 +25,10 @@ import {
   normalizeBillingStatus,
   upsertDunningStateFromStripeSignal,
 } from "@/app/lib/billing-dunning";
+import {
+  applyPlanSync,
+  readCanonicalWorkspacePlanSource,
+} from "@/app/lib/billing-sync";
 
 export const runtime = "nodejs";
 
@@ -357,69 +360,122 @@ function captureBillingBusinessException(
   });
 }
 
-async function upsertWorkspaceSubscriptionSnapshot(input: {
-  eventId: string;
+async function resolveWorkspaceOwnerUserId(workspaceId: string): Promise<string | null> {
+  const rows = await sql<{ owner_user_id: string }[]>`
+    select owner_user_id
+    from public.workspaces
+    where id = ${workspaceId}
+    limit 1
+  `;
+  return rows[0]?.owner_user_id ?? null;
+}
+
+async function syncPlanSnapshotAndCheckEffectiveness(input: {
+  event: Stripe.Event;
   workspaceId: string;
+  userId: string | null;
   plan: string | null;
   interval: "monthly" | "annual" | null;
-  subscriptionId: string;
+  subscriptionId: string | null;
   customerId: string | null;
   latestInvoiceId: string | null;
   status: string;
-  livemode: boolean;
-}): Promise<boolean> {
-  const isPro = input.plan ? input.plan !== "free" : true;
-  return sql.begin(async (tx) => {
-    const updated = (await tx.unsafe(
-      `
-        update public.users u
-        set
-          plan = coalesce($1, u.plan),
-          is_pro = $2,
-          stripe_subscription_id = $3,
-          stripe_customer_id = coalesce($4, u.stripe_customer_id),
-          subscription_status = $5
-        from public.workspaces w
-        where w.id = $6
-          and u.id = w.owner_user_id
-        returning u.id, u.email
-      `,
-      [
-        input.plan,
-        isPro,
-        input.subscriptionId,
-        input.customerId,
-        input.status,
-        input.workspaceId,
-      ],
-    )) as Array<{ id: string; email: string }>;
+}): Promise<{
+  effective: boolean;
+  wrote: {
+    users: { matched: number; updated: number };
+    workspaces: { matched: number; updated: number };
+    membership: { matched: number; updated: number };
+  };
+  readback: {
+    userPlan?: string | null;
+    workspacePlan?: string | null;
+    membershipPlan?: string | null;
+    activeWorkspaceId?: string | null;
+  };
+}> {
+  const ownerUserId =
+    input.userId?.trim() || (await resolveWorkspaceOwnerUserId(input.workspaceId)) || "";
+  let normalizedPlan = (input.plan ?? "").trim().toLowerCase();
+  if (!normalizedPlan) {
+    const fallback = await readCanonicalWorkspacePlanSource({
+      workspaceId: input.workspaceId,
+      userId: ownerUserId,
+    });
+    normalizedPlan = (fallback.value ?? "").trim().toLowerCase() || "free";
+  }
 
-    await tx.unsafe(
-      `
-        update public.billing_events
-        set
-          workspace_id = $1,
-          status = $2,
-          meta = coalesce(meta, '{}'::jsonb) || $3::jsonb
-        where stripe_event_id = $4
-      `,
-      [
-        input.workspaceId,
-        input.status,
-        JSON.stringify({
-          plan: input.plan,
-          interval: input.interval,
-          stripeSubscriptionId: input.subscriptionId,
-          stripeCustomerId: input.customerId,
-          latestInvoiceId: input.latestInvoiceId,
-          livemode: input.livemode,
-        }),
-        input.eventId,
-      ],
-    );
-
-    return updated.length > 0;
+  const synced = await applyPlanSync({
+    workspaceId: input.workspaceId,
+    userId: ownerUserId,
+    plan: normalizedPlan,
+    interval: input.interval,
+    stripeCustomerId: input.customerId,
+    stripeSubscriptionId: input.subscriptionId,
+    subscriptionStatus: input.status,
+    livemode: input.event.livemode,
+    latestInvoiceId: input.latestInvoiceId,
+    source: input.event.type,
+    stripeEventIdOrReconcileKey: input.event.id,
   });
+
+  const effective =
+    synced.readback.workspacePlan === normalizedPlan ||
+    synced.readback.membershipPlan === normalizedPlan ||
+    synced.readback.userPlan === normalizedPlan;
+
+  await sql`
+    update public.billing_events
+    set
+      workspace_id = ${input.workspaceId},
+      status = ${input.status},
+      meta = coalesce(meta, '{}'::jsonb) || ${JSON.stringify({
+        plan: normalizedPlan,
+        interval: input.interval,
+        stripeSubscriptionId: input.subscriptionId,
+        stripeCustomerId: input.customerId,
+        latestInvoiceId: input.latestInvoiceId,
+        livemode: input.event.livemode,
+        sync: {
+          effective,
+          wrote: synced.wrote,
+          readback: synced.readback,
+        },
+      })}::jsonb
+    where stripe_event_id = ${input.event.id}
+  `;
+
+  if (!effective) {
+    Sentry.captureException(new Error("PLAN_SYNC_NO_EFFECT"), {
+      tags: {
+        "event.type": input.event.type,
+        livemode: String(input.event.livemode),
+        workspaceId: input.workspaceId,
+      },
+      extra: {
+        eventId: input.event.id,
+        userId: ownerUserId || null,
+        plan: normalizedPlan,
+        wrote: synced.wrote,
+        readback: synced.readback,
+      },
+    });
+    console.warn("[stripe webhook] plan sync had no effect", {
+      eventId: input.event.id,
+      eventType: input.event.type,
+      workspaceId: input.workspaceId,
+      userId: ownerUserId || null,
+      plan: normalizedPlan,
+      wrote: synced.wrote,
+      readback: synced.readback,
+    });
+  }
+
+  return {
+    effective,
+    wrote: synced.wrote,
+    readback: synced.readback,
+  };
 }
 
 function isStripeResourceMissing404(err: any): boolean {
@@ -1303,31 +1359,17 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           return;
         }
 
-        const updated = await upsertWorkspaceSubscriptionSnapshot({
-          eventId: event.id,
+        await syncPlanSnapshotAndCheckEffectiveness({
+          event,
           workspaceId: workspace.workspaceId,
+          userId: session.metadata?.userId ?? null,
           plan: normalizedPlan,
           interval,
           subscriptionId: stripeSubscription.id,
           customerId,
           latestInvoiceId,
           status: "active",
-          livemode: event.livemode,
         });
-
-        if (!updated) {
-          captureBillingBusinessException(
-            new Error("No workspace owner row updated from checkout.session.completed"),
-            {
-              event,
-              sessionId: session.id ?? null,
-              subscriptionId: session.subscription,
-              userId: session.metadata?.userId ?? null,
-              workspaceId: workspace.workspaceId,
-            },
-          );
-          return;
-        }
 
         const funnelEmail = session.metadata?.userEmail ?? workspace.userEmail ?? null;
         if (funnelEmail) {
@@ -1424,16 +1466,6 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     billingContextHints.userId = sub.metadata?.userId ?? null;
     billingContextHints.userEmail = sub.metadata?.userEmail ?? null;
     billingContextHints.workspaceId = sub.metadata?.workspaceId ?? null;
-    const cancelRequested = !!sub.cancel_at_period_end || sub.cancel_at != null;
-    const currentPeriodEndUnix =
-      (sub as any).current_period_end ??
-      sub.cancel_at ??
-      sub.items?.data?.[0]?.current_period_end ??
-      null;
-    const currentPeriodEnd =
-      typeof currentPeriodEndUnix === "number"
-        ? new Date(currentPeriodEndUnix * 1000)
-        : null;
     const subscriptionPrice = sub.items?.data?.[0]?.price;
     const plan = resolvePaidPlanFromStripe({
       metadataPlan: sub.metadata?.plan ?? null,
@@ -1441,7 +1473,10 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       productId: parseStripeId(subscriptionPrice?.product),
       productMetadataPlan: readProductMetadataPlan(subscriptionPrice?.product),
     });
-    const isPro = isActiveSubscription(status) && Boolean(plan);
+    const interval = toStoredBillingInterval(
+      sub.items?.data?.[0]?.price?.recurring?.interval ?? null,
+    );
+    const latestInvoiceId = readInvoiceReferenceId(sub.latest_invoice);
 
     try {
       const workspace = await resolveBillingWorkspaceContext({
@@ -1490,19 +1525,25 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       }
 
       if (workspace?.workspaceId) {
-        await upsertWorkspaceSubscriptionSnapshot({
-          eventId: event.id,
+        await syncPlanSnapshotAndCheckEffectiveness({
+          event,
           workspaceId: workspace.workspaceId,
+          userId: sub.metadata?.userId ?? null,
           plan: plan ?? null,
-          interval: toStoredBillingInterval(
-            sub.items?.data?.[0]?.price?.recurring?.interval ?? null,
-          ),
-          subscriptionId,
-          customerId,
-          latestInvoiceId: readInvoiceReferenceId(sub.latest_invoice),
+          interval,
+          subscriptionId: subscriptionId ?? null,
+          customerId: customerId ?? null,
+          latestInvoiceId,
           status,
-          livemode: event.livemode,
         });
+
+        if (status === "active" && workspace.userEmail) {
+          await logFunnelEvent({
+            userEmail: workspace.userEmail,
+            eventName: "subscription_active",
+            source: "billing",
+          });
+        }
       }
     } catch (error) {
       captureBillingBusinessException(error, {
@@ -1512,79 +1553,6 @@ async function processEvent(event: Stripe.Event): Promise<void> {
         workspaceId: sub.metadata?.workspaceId ?? null,
       });
       return;
-    }
-
-    const updated = await sql`
-      update public.users
-      set
-        plan = coalesce(${plan}, plan),
-        stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
-        stripe_subscription_id = ${subscriptionId},
-        subscription_status = ${status},
-        cancel_at_period_end = ${cancelRequested},
-        current_period_end = ${currentPeriodEnd},
-        is_pro = ${isPro}
-      where stripe_subscription_id = ${subscriptionId}
-      returning id, email, stripe_subscription_id, subscription_status, cancel_at_period_end, current_period_end, is_pro
-    `;
-
-    debugLog("customer.subscription upsert", {
-      subscriptionId,
-      status,
-      rows: updated.length,
-      user: updated[0] ?? null,
-    });
-
-    if (status === "active" && updated.length > 0) {
-      await Promise.all(
-        updated
-          .filter((row) => typeof row.email === "string" && row.email.trim())
-          .map((row) =>
-            logFunnelEvent({
-              userEmail: row.email,
-              eventName: "subscription_active",
-              source: "billing",
-            }),
-          ),
-      );
-    }
-
-    if (updated.length === 0) {
-      const metaUserId = (sub.metadata?.userId as string | undefined) || undefined;
-      if (metaUserId) {
-        const updated2 = await sql`
-          update public.users
-          set
-            plan = coalesce(${plan}, plan),
-            stripe_customer_id = coalesce(${customerId}, stripe_customer_id),
-            stripe_subscription_id = ${subscriptionId},
-            subscription_status = ${status},
-            cancel_at_period_end = ${cancelRequested},
-            current_period_end = ${currentPeriodEnd},
-            is_pro = ${isPro}
-          where id = ${metaUserId}
-          returning id, email, stripe_subscription_id, cancel_at_period_end, current_period_end, is_pro
-        `;
-        debugLog("customer.subscription fallback upsert", {
-          metaUserId,
-          rows: updated2.length,
-          user: updated2[0] ?? null,
-        });
-
-        if (status === "active" && updated2.length > 0) {
-          await Promise.all(
-            updated2
-              .filter((row) => typeof row.email === "string" && row.email.trim())
-              .map((row) =>
-                logFunnelEvent({
-                  userEmail: row.email,
-                  eventName: "subscription_active",
-                  source: "billing",
-                }),
-              ),
-          );
-        }
-      }
     }
   }
 
@@ -1736,16 +1704,19 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           linePrice?.recurring?.interval ?? null;
         const interval = toStoredBillingInterval(stripeInterval);
 
-        await upsertWorkspaceSubscriptionSnapshot({
-          eventId: event.id,
+        await syncPlanSnapshotAndCheckEffectiveness({
+          event,
           workspaceId: workspace.workspaceId,
+          userId:
+            invoiceAny.parent?.subscription_details?.metadata?.userId ??
+            invoiceAny.subscription_details?.metadata?.userId ??
+            null,
           plan,
           interval,
-          subscriptionId,
-          customerId,
+          subscriptionId: subscriptionId ?? null,
+          customerId: customerId ?? null,
           latestInvoiceId: stripeInvoice.id ?? null,
           status: "active",
-          livemode: event.livemode,
         });
       }
     } catch (error) {
@@ -1761,19 +1732,6 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       return;
     }
 
-    if (subscriptionId) {
-      await sql`
-        update public.users
-        set subscription_status = 'active'
-        where stripe_subscription_id = ${subscriptionId}
-      `;
-    } else if (customerId) {
-      await sql`
-        update public.users
-        set subscription_status = 'active'
-        where stripe_customer_id = ${customerId}
-      `;
-    }
   }
 
   if (event.type === "payment_intent.succeeded") {

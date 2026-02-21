@@ -19,6 +19,7 @@ import {
   type BillingInterval,
   type PlanId,
 } from '@/app/lib/config';
+import { diagnosticsEnabled, isSettingsRemindersAdminEmail } from '@/app/lib/admin-gates';
 import IntervalToggle from '@/app/ui/pricing/interval-toggle';
 import PricingPanel from '@/app/ui/pricing/panel';
 import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
@@ -26,6 +27,7 @@ import { CARD_INTERACTIVE } from '@/app/ui/theme/tokens';
 import { logFunnelEvent } from '@/app/lib/funnel-events';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import { getStripeConfigState } from '@/app/lib/stripe-guard';
+import { readCanonicalWorkspacePlanSource } from '@/app/lib/billing-sync';
 import {
   fetchLatestBillingEventForWorkspace,
   fetchWorkspaceDunningState,
@@ -76,6 +78,15 @@ function formatRelativeTime(value: Date | string | null | undefined) {
   return formatter.format(diffDays, 'day');
 }
 
+function normalizePlanId(value: string | null | undefined): PlanId | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'free' || normalized === 'solo' || normalized === 'pro' || normalized === 'studio') {
+    return normalized as PlanId;
+  }
+  return null;
+}
+
 export default async function BillingSettingsPage(props: {
   searchParams?: Promise<{
     success?: string;
@@ -116,19 +127,24 @@ export default async function BillingSettingsPage(props: {
   });
 
   const {
-    plan,
-    isPro,
+    plan: userPlan,
     subscriptionStatus,
     cancelAtPeriodEnd,
     currentPeriodEnd,
     invoiceCount,
-    maxPerMonth,
   } = await fetchUserPlanAndUsage();
   const connectStatus: StripeConnectStatus =
     await fetchStripeConnectStatusForUser(userEmail);
   const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+  const planSource = await readCanonicalWorkspacePlanSource({
+    workspaceId: workspaceContext.workspaceId,
+    userId: workspaceContext.userId,
+  });
+  const plan = normalizePlanId(planSource.value) ?? userPlan;
   const canRunSelfCheck =
     workspaceContext.userRole === 'owner' || workspaceContext.userRole === 'admin';
+  const showPlanSourceDiagnostics =
+    diagnosticsEnabled() && isSettingsRemindersAdminEmail(userEmail);
   const [dunningState, latestBillingEvent] = await Promise.all([
     fetchWorkspaceDunningState(workspaceContext.workspaceId),
     fetchLatestBillingEventForWorkspace(workspaceContext.workspaceId),
@@ -166,6 +182,7 @@ export default async function BillingSettingsPage(props: {
   const lastPaymentFailureLabel = formatEtDateTime(dunningState?.lastPaymentFailureAt);
   const latestBillingEventRelative = formatRelativeTime(latestBillingEvent?.createdAt);
   const planConfig = PLAN_CONFIG[plan];
+  const isPro = plan !== 'free';
   const isUnlimited = !Number.isFinite(planConfig.maxPerMonth);
   const connectStatusPill: {
     label: string;
@@ -246,9 +263,16 @@ export default async function BillingSettingsPage(props: {
           </p>
         ) : (
           <p className="text-sm text-slate-600 dark:text-neutral-300">
-            This month: {invoiceCount} / {maxPerMonth} invoices used.
+            This month: {invoiceCount} / {planConfig.maxPerMonth} invoices used.
           </p>
         )}
+
+        {showPlanSourceDiagnostics ? (
+          <p className="text-xs text-slate-500 dark:text-neutral-400">
+            Plan source: {planSource.source}={planSource.value ?? 'null'} (workspaceId=
+            {workspaceContext.workspaceId})
+          </p>
+        ) : null}
 
         {subscriptionStatus && (
           <p className="text-xs text-slate-500 dark:text-neutral-500">
@@ -295,7 +319,7 @@ export default async function BillingSettingsPage(props: {
             </div>
           ) : null}
           {planCards.map((planCard) => {
-            const isCurrent = plan === planCard.id && isPro;
+            const isCurrent = plan === planCard.id;
             const isAnnual = interval === 'annual';
 
             return (

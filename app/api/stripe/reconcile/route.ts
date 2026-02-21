@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { stripe } from '@/app/lib/stripe';
 import { resolvePaidPlanFromStripe } from '@/app/lib/config';
+import { applyPlanSync } from '@/app/lib/billing-sync';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -33,31 +34,12 @@ function readProductPlan(
   return product.metadata?.plan ?? null;
 }
 
-type WorkspaceBillingColumns = {
-  hasPlan: boolean;
-  hasStripeCustomerId: boolean;
-  hasStripeSubscriptionId: boolean;
-  hasSubscriptionStatus: boolean;
-};
-
-async function readWorkspaceBillingColumns(tx: any): Promise<WorkspaceBillingColumns> {
-  const rows = (await tx.unsafe(
-    `
-      select column_name
-      from information_schema.columns
-      where table_schema = 'public'
-        and table_name = 'workspaces'
-        and column_name in ('plan', 'stripe_customer_id', 'stripe_subscription_id', 'subscription_status')
-    `,
-    [],
-  )) as Array<{ column_name: string }>;
-  const set = new Set(rows.map((row) => row.column_name));
-  return {
-    hasPlan: set.has('plan'),
-    hasStripeCustomerId: set.has('stripe_customer_id'),
-    hasStripeSubscriptionId: set.has('stripe_subscription_id'),
-    hasSubscriptionStatus: set.has('subscription_status'),
-  };
+function toStoredBillingInterval(value: string | null | undefined): 'monthly' | 'annual' | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'monthly') return 'monthly';
+  if (normalized === 'annual' || normalized === 'yearly') return 'annual';
+  return null;
 }
 
 async function resolveWorkspaceForUser(input: {
@@ -180,160 +162,114 @@ export async function POST(req: Request) {
 
   const customerId = parseStripeId(subscription.customer);
   const status = String(subscription.status).trim().toLowerCase();
-  const cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end || subscription.cancel_at);
-  const currentPeriodEndUnix =
-    (subscription as Stripe.Subscription & { current_period_end?: number }).current_period_end ??
-    subscription.cancel_at ??
-    null;
-  const currentPeriodEnd =
-    typeof currentPeriodEndUnix === 'number'
-      ? new Date(currentPeriodEndUnix * 1000)
-      : null;
+  const interval = toStoredBillingInterval(subscription.items?.data?.[0]?.price?.recurring?.interval);
+  const latestInvoiceId = parseStripeId(subscription.latest_invoice);
   const dedupeKey = `manual_reconcile:${sessionId ?? subscription.id}`;
 
-  const result = await sql.begin(async (tx) => {
-    const inserted = (await tx.unsafe(
-      `
-        insert into public.billing_events (
-          workspace_id,
-          user_email,
-          event_type,
-          stripe_event_id,
-          stripe_object_id,
-          status,
-          meta
-        )
-        values (
-          $1,
-          $2,
-          'manual_reconcile',
-          $3,
-          $4,
-          $5,
-          $6::jsonb
-        )
-        on conflict do nothing
-        returning id
-      `,
-      [workspaceId, userEmail, dedupeKey, subscription.id, status, JSON.stringify({ source: 'manual_reconcile' })],
-    )) as Array<{ id: string }>;
-
-    if (inserted.length === 0) {
-      const current = (await tx.unsafe(
-        `
-          select u.plan
-          from public.workspaces w
-          join public.users u on u.id = w.owner_user_id
-          where w.id = $1
-          limit 1
-        `,
-        [workspaceId],
-      )) as Array<{ plan: string | null }>;
-      return {
-        deduped: true,
-        currentPlan: current[0]?.plan ?? plan,
-      };
-    }
-
-    await tx.unsafe(
-      `
-        update public.users u
-        set
-          plan = $1,
-          is_pro = true,
-          stripe_customer_id = coalesce($2, u.stripe_customer_id),
-          stripe_subscription_id = $3,
-          subscription_status = $4,
-          cancel_at_period_end = $5,
-          current_period_end = $6
-        from public.workspaces w
-        where w.id = $7
-          and u.id = w.owner_user_id
-      `,
-      [plan, customerId, subscription.id, status, cancelAtPeriodEnd, currentPeriodEnd, workspaceId],
-    );
-
-    const columns = await readWorkspaceBillingColumns(tx);
-    if (columns.hasPlan) {
-      await tx.unsafe(
-        `
-          update public.workspaces
-          set plan = $1
-          where id = $2
-        `,
-        [plan, workspaceId],
-      );
-    }
-    if (columns.hasStripeCustomerId) {
-      await tx.unsafe(
-        `
-          update public.workspaces
-          set stripe_customer_id = coalesce($1, stripe_customer_id)
-          where id = $2
-        `,
-        [customerId, workspaceId],
-      );
-    }
-    if (columns.hasStripeSubscriptionId) {
-      await tx.unsafe(
-        `
-          update public.workspaces
-          set stripe_subscription_id = $1
-          where id = $2
-        `,
-        [subscription.id, workspaceId],
-      );
-    }
-    if (columns.hasSubscriptionStatus) {
-      await tx.unsafe(
-        `
-          update public.workspaces
-          set subscription_status = $1
-          where id = $2
-        `,
-        [status, workspaceId],
-      );
-    }
-
-    await tx.unsafe(
-      `
-        update public.billing_events
-        set
-          workspace_id = $1,
-          status = $2,
-          meta = coalesce(meta, '{}'::jsonb) || $3::jsonb
-        where stripe_event_id = $4
-      `,
-      [
-        workspaceId,
+  const inserted = (await sql.unsafe(
+    `
+      insert into public.billing_events (
+        workspace_id,
+        user_email,
+        event_type,
+        stripe_event_id,
+        stripe_object_id,
         status,
-        JSON.stringify({
-          source: 'manual_reconcile',
-          plan,
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subscription.id,
-        }),
-        dedupeKey,
-      ],
-    );
+        meta
+      )
+      values (
+        $1,
+        $2,
+        'manual_reconcile',
+        $3,
+        $4,
+        $5,
+        $6::jsonb
+      )
+      on conflict do nothing
+      returning id
+    `,
+    [workspaceId, userEmail, dedupeKey, subscription.id, status, JSON.stringify({ source: 'manual_reconcile' })],
+  )) as Array<{ id: string }>;
 
-    return {
-      deduped: false,
-      currentPlan: plan,
-    };
+  const sync = await applyPlanSync({
+    workspaceId,
+    userId,
+    plan,
+    interval,
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscription.id,
+    subscriptionStatus: status,
+    livemode: subscription.livemode,
+    latestInvoiceId,
+    source: 'manual_reconcile',
+    stripeEventIdOrReconcileKey: dedupeKey,
   });
+
+  const effective =
+    sync.readback.workspacePlan === plan ||
+    sync.readback.membershipPlan === plan ||
+    sync.readback.userPlan === plan;
+
+  await sql.unsafe(
+    `
+      update public.billing_events
+      set
+        workspace_id = $1,
+        status = $2,
+        meta = coalesce(meta, '{}'::jsonb) || $3::jsonb
+      where stripe_event_id = $4
+    `,
+    [
+      workspaceId,
+      status,
+      JSON.stringify({
+        source: 'manual_reconcile',
+        plan,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscription.id,
+        effective,
+        wrote: sync.wrote,
+        readback: sync.readback,
+      }),
+      dedupeKey,
+    ],
+  );
+
+  if (!effective) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: 'PLAN_SYNC_NO_EFFECT',
+        message: 'Plan sync did not update the billing source of truth',
+        workspaceId,
+        userId,
+        plan,
+        wrote: sync.wrote,
+        readback: sync.readback,
+      },
+      { status: 200 },
+    );
+  }
 
   return NextResponse.json(
     {
       ok: true,
-      plan: result.currentPlan,
+      resolved: {
+        workspaceId,
+        plan,
+      },
       workspaceId,
+      plan,
+      wrote: sync.wrote,
+      readback: sync.readback,
+      effective,
       stripe: {
         customer: customerId,
         subscription: subscription.id,
       },
       source: 'manual_reconcile',
-      deduped: result.deduped,
+      deduped: inserted.length === 0,
     },
     { status: 200 },
   );
