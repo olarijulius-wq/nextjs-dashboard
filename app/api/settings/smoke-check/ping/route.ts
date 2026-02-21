@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  getSmokeCheckAccessContext,
+  getSmokeCheckAccessDecision,
   getSmokeCheckPingPayload,
 } from '@/app/lib/smoke-check';
 
@@ -16,13 +16,16 @@ function noindexJson(body: unknown, status = 200) {
 }
 
 export async function GET() {
-  const context = await getSmokeCheckAccessContext();
-  if (!context) {
+  const decision = await getSmokeCheckAccessDecision();
+  if (!decision.allowed || !decision.context) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[diag-gate] /api/settings/smoke-check/ping denied: ${decision.reason}`);
+    }
     return noindexJson({ ok: false, error: 'Not Found' }, 404);
   }
 
   try {
-    const payload = await getSmokeCheckPingPayload(context);
+    const payload = await getSmokeCheckPingPayload(decision.context);
     return noindexJson({ ok: true, ...payload });
   } catch (error) {
     console.error('Production smoke check ping failed:', error);

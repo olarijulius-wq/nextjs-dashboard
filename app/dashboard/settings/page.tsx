@@ -94,16 +94,21 @@ export default async function SettingsPage(props: {
   }
 
   const userEmail = await requireUserEmail();
-  const canViewLaunchCheck = isLaunchCheckAdminEmail(userEmail);
+  let hasWorkspaceAdminRole = false;
+  let workspaceEmail = userEmail;
   let canViewSmokeDiagnostics = false;
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
+    hasWorkspaceAdminRole = context.userRole === 'owner' || context.userRole === 'admin';
+    workspaceEmail = context.userEmail;
     canViewSmokeDiagnostics =
-      (context.userRole === 'owner' || context.userRole === 'admin') &&
-      isSmokeCheckAdminEmail(context.userEmail);
+      hasWorkspaceAdminRole && isSmokeCheckAdminEmail(context.userEmail);
   } catch {
+    hasWorkspaceAdminRole = false;
+    workspaceEmail = userEmail;
     canViewSmokeDiagnostics = false;
   }
+  const canViewLaunchCheck = hasWorkspaceAdminRole && isLaunchCheckAdminEmail(workspaceEmail);
   const connectStatus = await fetchStripeConnectStatusForUser(userEmail);
   const payoutsBadge = connectStatus.isReadyForTransfers
     ? {

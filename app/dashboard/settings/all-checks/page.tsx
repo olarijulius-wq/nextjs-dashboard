@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getLaunchCheckAccessContext, getLatestLaunchCheckRun } from '@/app/lib/launch-check';
-import { getLatestSmokeCheckRun, getSmokeCheckAccessContext } from '@/app/lib/smoke-check';
+import {
+  getLaunchCheckAccessDecision,
+  getLatestLaunchCheckRun,
+} from '@/app/lib/launch-check';
+import { getLatestSmokeCheckRun, getSmokeCheckAccessDecision } from '@/app/lib/smoke-check';
 import { PageShell, SectionCard } from '@/app/ui/page-layout';
 import AllChecksPanel from './all-checks-panel';
 
@@ -14,11 +17,20 @@ export const metadata: Metadata = {
 };
 
 export default async function AllChecksPage() {
-  const [launchContext, smokeContext] = await Promise.all([
-    getLaunchCheckAccessContext(),
-    getSmokeCheckAccessContext(),
+  const [launchDecision, smokeDecision] = await Promise.all([
+    getLaunchCheckAccessDecision(),
+    getSmokeCheckAccessDecision(),
   ]);
-  if (!launchContext || !smokeContext) {
+  if (!launchDecision.allowed || !smokeDecision.allowed) {
+    if (process.env.NODE_ENV === 'development') {
+      const reason = [
+        !launchDecision.allowed ? `launch=${launchDecision.reason}` : null,
+        !smokeDecision.allowed ? `smoke=${smokeDecision.reason}` : null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      console.warn(`[diag-gate] /dashboard/settings/all-checks denied: ${reason}`);
+    }
     notFound();
   }
 

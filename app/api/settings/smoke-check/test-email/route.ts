@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  getSmokeCheckAccessContext,
+  getSmokeCheckAccessDecision,
   sendSmokeCheckTestEmail,
 } from '@/app/lib/smoke-check';
 
@@ -16,13 +16,16 @@ function noindexJson(body: unknown, status = 200) {
 }
 
 export async function POST() {
-  const context = await getSmokeCheckAccessContext();
-  if (!context) {
+  const decision = await getSmokeCheckAccessDecision();
+  if (!decision.allowed || !decision.context) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[diag-gate] /api/settings/smoke-check/test-email denied: ${decision.reason}`);
+    }
     return noindexJson({ ok: false, error: 'Not Found' }, 404);
   }
 
   try {
-    const result = await sendSmokeCheckTestEmail(context);
+    const result = await sendSmokeCheckTestEmail(decision.context);
     if (!result.ok && result.rateLimited) {
       return noindexJson(result, 429);
     }

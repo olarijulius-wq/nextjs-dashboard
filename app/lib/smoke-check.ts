@@ -8,7 +8,7 @@ import {
   ensureWorkspaceContextForCurrentUser,
   type WorkspaceContext,
 } from '@/app/lib/workspaces';
-import { isSmokeCheckAdminEmail } from '@/app/lib/admin-gates';
+import { getSmokeCheckAdminEmailDecision } from '@/app/lib/admin-gates';
 import {
   SMTP_MIGRATION_REQUIRED_CODE,
   fetchWorkspaceEmailSettings,
@@ -333,18 +333,51 @@ function getRetryAfterSecondsFromTestEmail(testEmail: TestEmailActionPayload | u
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
-export async function getSmokeCheckAccessContext(): Promise<WorkspaceContext | null> {
+export type DiagnosticsAccessDecision = {
+  allowed: boolean;
+  reason: string;
+  context: WorkspaceContext | null;
+};
+
+function isWorkspaceOwnerOrAdmin(role: WorkspaceContext['userRole']) {
+  return role === 'owner' || role === 'admin';
+}
+
+export async function getSmokeCheckAccessDecision(): Promise<DiagnosticsAccessDecision> {
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
-    const hasWorkspaceAccess = context.userRole === 'owner' || context.userRole === 'admin';
-    const allowlistedEmail = isSmokeCheckAdminEmail(context.userEmail);
-    if (!hasWorkspaceAccess || !allowlistedEmail) {
-      return null;
+    if (!isWorkspaceOwnerOrAdmin(context.userRole)) {
+      return {
+        allowed: false,
+        reason: `smoke-check: workspace role ${context.userRole} is not owner/admin`,
+        context: null,
+      };
     }
-    return context;
+    const allowlistDecision = getSmokeCheckAdminEmailDecision(context.userEmail);
+    if (!allowlistDecision.allowed) {
+      return {
+        allowed: false,
+        reason: allowlistDecision.reason,
+        context: null,
+      };
+    }
+    return {
+      allowed: true,
+      reason: 'smoke-check: allowed',
+      context,
+    };
   } catch {
-    return null;
+    return {
+      allowed: false,
+      reason: 'smoke-check: no session or workspace context unavailable',
+      context: null,
+    };
   }
+}
+
+export async function getSmokeCheckAccessContext(): Promise<WorkspaceContext | null> {
+  const decision = await getSmokeCheckAccessDecision();
+  return decision.allowed ? decision.context : null;
 }
 
 async function persistSmokeCheckRow(input: {
@@ -665,8 +698,8 @@ async function checkWebhookDedupeSafety(expectedMode: 'live' | 'test'): Promise<
           '2) stripe trigger checkout.session.completed (or invoice.payment_succeeded)',
           '3) Expected: webhook endpoint returns HTTP 200.',
           'B) Stripe Dashboard workflow (live):',
-          'Webhook endpoints -> select endpoint -> Recent deliveries.',
-          'Or Developers -> Events -> open event -> Deliveries -> Resend (only if deliveries exist).',
+          'Developers -> Webhooks -> select endpoint -> Recent deliveries.',
+          'Resend appears only when at least one delivery exists for that endpoint.',
         ].join(' ');
 
   const manual: SmokeCheckResult = {
@@ -772,7 +805,7 @@ async function checkEmailPrimitives(input: {
   manualChecks: SmokeCheckResult[];
   raw: Record<string, unknown>;
 }> {
-  const manualChecks: SmokeCheckResult[] = [
+  const defaultManualChecks: SmokeCheckResult[] = [
     {
       id: 'email-spf-manual',
       title: 'SPF record check (manual)',
@@ -811,6 +844,19 @@ async function checkEmailPrimitives(input: {
     });
     const latestRateLimited = latestTest?.payload?.rateLimited === true;
     const latestRetryAfterSec = getRetryAfterSecondsFromTestEmail(latestTest?.payload);
+    const latestResendMessageId =
+      latestTest?.payload?.success === true &&
+      latestTest.payload.provider === 'resend' &&
+      latestTest.payload.messageId
+        ? latestTest.payload.messageId
+        : null;
+    const resendVerificationNote = latestResendMessageId
+      ? ` Verified by last successful Resend test email + messageId (${latestResendMessageId}).`
+      : '';
+    const manualChecks = defaultManualChecks.map((check) => ({
+      ...check,
+      detail: `${check.detail}${resendVerificationNote}`,
+    }));
     const config = getEffectiveMailConfig({
       workspaceSettings: {
         provider: settings.provider,
@@ -894,7 +940,7 @@ async function checkEmailPrimitives(input: {
           ? 'Run SMTP migrations (008 and 021) and retry.'
           : 'Open Settings -> SMTP and verify provider configuration.',
       },
-      manualChecks,
+      manualChecks: defaultManualChecks,
       raw: {
         error: message,
       },

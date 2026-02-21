@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getMigrationReport } from '@/app/lib/migration-tracker';
-import { getSmokeCheckAccessContext } from '@/app/lib/smoke-check';
+import { getSmokeCheckAccessDecision } from '@/app/lib/smoke-check';
 import { SectionCard } from '@/app/ui/page-layout';
 import MigrationsPanel from './migrations-panel';
 
@@ -14,8 +14,11 @@ export const metadata: Metadata = {
 };
 
 export default async function MigrationsPage() {
-  const context = await getSmokeCheckAccessContext();
-  if (!context) {
+  const decision = await getSmokeCheckAccessDecision();
+  if (!decision.allowed) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[diag-gate] /dashboard/settings/migrations denied: ${decision.reason}`);
+    }
     notFound();
   }
 

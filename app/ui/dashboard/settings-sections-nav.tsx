@@ -45,8 +45,8 @@ export default function SettingsSectionsNav({
 }) {
   const pathname = usePathname();
   const canViewSettingsReminders = isSettingsRemindersAdminEmail(currentUserEmail);
-  const canViewLaunchCheck = isLaunchCheckAdminEmail(currentUserEmail);
   const hasWorkspaceAdminRole = currentUserRole === 'owner' || currentUserRole === 'admin';
+  const canViewLaunchCheck = hasWorkspaceAdminRole && isLaunchCheckAdminEmail(currentUserEmail);
   const canViewSmokeCheck =
     hasWorkspaceAdminRole && isSmokeCheckAdminEmail(currentUserEmail);
   const canViewAllChecks = canViewLaunchCheck && canViewSmokeCheck;

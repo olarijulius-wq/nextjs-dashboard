@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 import { ensureWorkspaceContextForCurrentUser, type WorkspaceContext } from '@/app/lib/workspaces';
-import { isLaunchCheckAdminEmail } from '@/app/lib/admin-gates';
+import { getLaunchCheckAdminEmailDecision } from '@/app/lib/admin-gates';
 import { resolveSiteUrlDebug } from '@/app/lib/seo/site-url';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -822,20 +822,51 @@ function checkEnvSanity(params: {
   };
 }
 
-export async function getLaunchCheckAccessContext(): Promise<WorkspaceContext | null> {
+export type LaunchCheckAccessDecision = {
+  allowed: boolean;
+  reason: string;
+  context: WorkspaceContext | null;
+};
+
+function isWorkspaceOwnerOrAdmin(role: WorkspaceContext['userRole']) {
+  return role === 'owner' || role === 'admin';
+}
+
+export async function getLaunchCheckAccessDecision(): Promise<LaunchCheckAccessDecision> {
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
-    const hasWorkspaceAccess = context.userRole === 'owner' || context.userRole === 'admin';
-    const allowlistedEmail = isLaunchCheckAdminEmail(context.userEmail);
-
-    if (!hasWorkspaceAccess || !allowlistedEmail) {
-      return null;
+    if (!isWorkspaceOwnerOrAdmin(context.userRole)) {
+      return {
+        allowed: false,
+        reason: `launch-check: workspace role ${context.userRole} is not owner/admin`,
+        context: null,
+      };
     }
-
-    return context;
+    const allowlistDecision = getLaunchCheckAdminEmailDecision(context.userEmail);
+    if (!allowlistDecision.allowed) {
+      return {
+        allowed: false,
+        reason: allowlistDecision.reason,
+        context: null,
+      };
+    }
+    return {
+      allowed: true,
+      reason: 'launch-check: allowed',
+      context,
+    };
   } catch {
-    return null;
+    return {
+      allowed: false,
+      reason: 'launch-check: no session or workspace context unavailable',
+      context: null,
+    };
   }
+}
+
+export async function getLaunchCheckAccessContext(): Promise<WorkspaceContext | null> {
+  const decision = await getLaunchCheckAccessDecision();
+  return decision.allowed ? decision.context : null;
 }
 
 export async function getLatestLaunchCheckRun(): Promise<LaunchCheckRunRecord | null> {

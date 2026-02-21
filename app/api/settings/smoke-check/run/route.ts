@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  getSmokeCheckAccessContext,
+  getSmokeCheckAccessDecision,
   runProductionSmokeChecks,
 } from '@/app/lib/smoke-check';
 
@@ -16,13 +16,16 @@ function noindexJson(body: unknown, status = 200) {
 }
 
 export async function POST() {
-  const context = await getSmokeCheckAccessContext();
-  if (!context) {
+  const decision = await getSmokeCheckAccessDecision();
+  if (!decision.allowed || !decision.context) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[diag-gate] /api/settings/smoke-check/run denied: ${decision.reason}`);
+    }
     return noindexJson({ ok: false, error: 'Not Found' }, 404);
   }
 
   try {
-    const payload = await runProductionSmokeChecks(context);
+    const payload = await runProductionSmokeChecks(decision.context);
     return noindexJson(payload);
   } catch (error) {
     console.error('Production smoke check failed:', error);

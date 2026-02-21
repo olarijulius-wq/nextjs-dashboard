@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import {
+  getSmokeCheckAccessDecision,
   getLatestSmokeCheckRun,
-  getSmokeCheckAccessContext,
   getSmokeCheckPingPayload,
 } from '@/app/lib/smoke-check';
 import { PageShell, SectionCard } from '@/app/ui/page-layout';
@@ -17,14 +17,17 @@ export const metadata: Metadata = {
 };
 
 export default async function SmokeCheckPage() {
-  const context = await getSmokeCheckAccessContext();
-  if (!context) {
+  const decision = await getSmokeCheckAccessDecision();
+  if (!decision.allowed || !decision.context) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[diag-gate] /dashboard/settings/smoke-check denied: ${decision.reason}`);
+    }
     notFound();
   }
 
   const [lastRun, ping] = await Promise.all([
     getLatestSmokeCheckRun(),
-    getSmokeCheckPingPayload(context),
+    getSmokeCheckPingPayload(decision.context),
   ]);
 
   return (
