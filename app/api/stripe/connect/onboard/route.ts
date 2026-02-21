@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
 import postgres from 'postgres';
-import { stripe } from '@/app/lib/stripe';
+import Stripe from 'stripe';
 import { requireUserEmail } from '@/app/lib/data';
 import { checkConnectedAccountAccess } from '@/app/lib/stripe-connect';
-import {
-  assertStripeConfig,
-  normalizeStripeConfigError,
-} from '@/app/lib/stripe-guard';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
+const STRIPE_CONFIG_INVALID = 'STRIPE_CONFIG_INVALID';
 const STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED = 'STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED';
 
 type StripeErrorDetails = {
@@ -28,6 +25,64 @@ class StripeConnectAccountsCreateError extends Error {
   constructor(causeError: unknown) {
     super('Stripe connected account creation failed.');
     this.causeError = causeError;
+  }
+}
+
+function buildStamp() {
+  return process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'unknown';
+}
+
+function getStripeConfigInvalidReason() {
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim() ?? '';
+  if (!secretKey) return 'Missing STRIPE_SECRET_KEY';
+
+  const isProduction =
+    process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+  if (
+    isProduction &&
+    !secretKey.startsWith('sk_live_')
+  ) {
+    return 'STRIPE_SECRET_KEY is not a live key in production (expected sk_live_)';
+  }
+
+  const connectMode = (process.env.STRIPE_CONNECT_MODE ?? '').trim();
+  if (!connectMode) return 'Missing STRIPE_CONNECT_MODE; set account_links';
+  if (connectMode !== 'account_links') {
+    return 'STRIPE_CONNECT_MODE must be account_links';
+  }
+
+  return null;
+}
+
+function stripeConfigInvalidResponse(message: string, status = 500) {
+  const build = buildStamp();
+  if (process.env.NODE_ENV === 'development') {
+    console.warn('[stripe-connect/onboard] STRIPE_CONFIG_INVALID', {
+      message,
+      build,
+    });
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      code: STRIPE_CONFIG_INVALID,
+      message,
+      build,
+      env: {
+        nodeEnv: process.env.NODE_ENV,
+        vercelEnv: process.env.VERCEL_ENV ?? null,
+      },
+    },
+    { status },
+  );
+}
+
+function initStripeClient() {
+  try {
+    return new Stripe(process.env.STRIPE_SECRET_KEY as string);
+  } catch {
+    return null;
   }
 }
 
@@ -69,6 +124,7 @@ function summarizeStripeConnectAccountsCreateFailure(message: string | null) {
 }
 
 export async function POST(req: Request) {
+  const build = buildStamp();
   let userEmail = '';
   try {
     userEmail = await requireUserEmail();
@@ -88,9 +144,17 @@ export async function POST(req: Request) {
   const reconnectRequested =
     new URL(req.url).searchParams.get('reconnect') === '1';
 
-  try {
-    assertStripeConfig();
+  const configReason = getStripeConfigInvalidReason();
+  if (configReason) {
+    return stripeConfigInvalidResponse(configReason);
+  }
 
+  const stripe = initStripeClient();
+  if (!stripe) {
+    return stripeConfigInvalidResponse('Stripe client init failed');
+  }
+
+  try {
     const [user] = await sql<
       { id: string; stripe_connect_account_id: string | null }[]
     >`
@@ -161,7 +225,7 @@ export async function POST(req: Request) {
       return_url: payoutsUrl,
     });
 
-    return NextResponse.json({ url: accountLink.url });
+    return NextResponse.json({ ok: true, url: accountLink.url, build });
   } catch (err: unknown) {
     if (err instanceof StripeConnectAccountsCreateError) {
       const details = extractStripeErrorDetails(err.causeError);
@@ -181,6 +245,7 @@ export async function POST(req: Request) {
           ok: false,
           code: STRIPE_CONNECT_ACCOUNTS_CREATE_FAILED,
           message,
+          build,
           stripe: {
             type: details.type,
             code: details.code,
@@ -192,16 +257,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const normalized = normalizeStripeConfigError(err);
     console.error('Error creating Stripe Connect onboarding link', err);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: normalized.message ?? `Failed to start onboarding in ${mode} mode.`,
-        guidance: normalized.guidance,
-        code: normalized.code,
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({
+      ok: false,
+      error: `Failed to start onboarding in ${mode} mode.`,
+      build,
+    }, { status: 500 });
   }
 }
