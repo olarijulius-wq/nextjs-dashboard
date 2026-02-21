@@ -13,6 +13,7 @@ import {
 } from '@/app/ui/button';
 import { useActionState, useState } from 'react';
 import { createInvoice, type CreateInvoiceState } from '@/app/lib/actions';
+import type { UserInvoiceUsageProgress } from '@/app/lib/data';
 
 const neutralSecondaryButtonClasses =
   'inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition duration-200 ease-out hover:bg-neutral-50 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-neutral-900 dark:focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-50';
@@ -20,9 +21,15 @@ const neutralSecondaryButtonClasses =
 export default function Form({
   customers,
   initialCustomerId,
+  returnTo,
+  usage,
+  interval,
 }: {
   customers: CustomerField[];
   initialCustomerId?: string | null;
+  returnTo?: string;
+  usage: UserInvoiceUsageProgress;
+  interval?: string;
 }) {
   const initialState: CreateInvoiceState | null = null;
   const [state, formAction] = useActionState(createInvoice, initialState);
@@ -30,8 +37,12 @@ export default function Form({
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const billingHref = `/dashboard/settings/billing?plan=${encodeURIComponent(usage.planId)}${
+    interval ? `&interval=${encodeURIComponent(interval)}` : ''
+  }`;
   return (
     <form action={formAction}>
+      {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] md:p-6 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         {/* Customer Name */}
         <div className="mb-4">
@@ -181,18 +192,29 @@ export default function Form({
               ))}
           </div>
         </div>
-        {state?.ok === false && state.code === 'LIMIT_REACHED' && (
+        {state?.ok === false &&
+          state.code === 'LIMIT_REACHED' &&
+          state.message.startsWith('Monthly invoice limit reached') && (
           <div className="mt-4 rounded-xl border border-amber-300 bg-amber-100 p-3 text-amber-900 dark:border-amber-400/50 dark:bg-amber-500/10 dark:text-amber-100">
-            <p className="text-sm">{state.message}</p>
-            <a
-              className={`${primaryButtonClasses} mt-2 px-3 py-2`}
-              href="/dashboard/settings/billing"
-            >
-              Upgrade
-            </a>
+            <p className="text-sm">
+              Monthly invoice limit reached ({usage.usedThisMonth}/{usage.maxPerMonth ?? '∞'}).
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <a className={`${primaryButtonClasses} px-3 py-2`} href={billingHref}>
+                Upgrade plan
+              </a>
+              <a
+                className={`${neutralSecondaryButtonClasses} px-3 py-2 text-xs`}
+                href="/dashboard/settings/usage"
+              >
+                View usage
+              </a>
+            </div>
           </div>
         )}
-        {state?.ok === false && state.code !== 'LIMIT_REACHED' && (
+        {state?.ok === false &&
+          (state.code !== 'LIMIT_REACHED' ||
+            !state.message.startsWith('Monthly invoice limit reached')) && (
           <p className="mt-4 text-sm text-red-500" aria-live="polite">
             {state.message}
           </p>

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { primaryButtonClasses } from '@/app/ui/button';
+import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
 import type { PlanId } from '@/app/lib/config';
 
 type UpgradeNudgeVariant = 'soft' | 'warn' | 'block';
@@ -39,14 +39,14 @@ export default function UpgradeNudge({
 
   const message =
     resolvedVariant === 'block'
-      ? `Invoice limit reached (${usedThisMonth}/${cap}). Upgrade to create more invoices.`
+      ? `Monthly invoice limit reached (${usedThisMonth}/${cap}).`
       : resolvedVariant === 'warn'
         ? `Almost at your limit (${usedThisMonth}/${cap}). Upgrade to avoid interruptions.`
         : `You're close to your monthly invoice limit (${usedThisMonth}/${cap}).`;
 
-  const billingHref = interval
-    ? `/dashboard/settings/billing?interval=${encodeURIComponent(interval)}`
-    : '/dashboard/settings/billing';
+  const billingHref = `/dashboard/settings/billing?plan=${encodeURIComponent(planId)}${
+    interval ? `&interval=${encodeURIComponent(interval)}` : ''
+  }`;
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-4 text-slate-900 shadow-sm dark:border-neutral-800/80 dark:bg-neutral-950/95 dark:text-neutral-100 dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
@@ -57,12 +57,16 @@ export default function UpgradeNudge({
             Current plan: <span className="uppercase tracking-wide">{planId}</span>
           </p>
         </div>
-        <Link
-          href={billingHref}
-          className={`${primaryButtonClasses} px-3 py-2 text-xs`}
-        >
-          Upgrade
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href={billingHref} className={`${primaryButtonClasses} px-3 py-2 text-xs`}>
+            Upgrade plan
+          </Link>
+          {resolvedVariant === 'block' ? (
+            <Link href="/dashboard/settings/usage" className={`${secondaryButtonClasses} px-3 py-2 text-xs`}>
+              View usage
+            </Link>
+          ) : null}
+        </div>
       </div>
     </section>
   );

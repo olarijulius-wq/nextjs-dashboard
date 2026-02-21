@@ -6,7 +6,10 @@ export const metadata: Metadata = {
   title: 'Create Customer',
 };
 
-export default async function Page() {
+export default async function Page(props: {
+  searchParams?: Promise<{ returnTo?: string }>;
+}) {
+  const searchParams = await props.searchParams;
   return (
     <main>
       <Breadcrumbs
@@ -15,7 +18,7 @@ export default async function Page() {
           { label: 'Create Customer', href: '/dashboard/customers/create', active: true },
         ]}
       />
-      <Form />
+      <Form returnTo={searchParams?.returnTo} />
     </main>
   );
 }

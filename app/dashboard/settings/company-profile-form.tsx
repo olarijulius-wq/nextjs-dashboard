@@ -1,9 +1,10 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Button } from '@/app/ui/button';
 import { saveCompanyProfile, type CompanyProfileState } from '@/app/lib/actions';
 import type { CompanyProfile } from '@/app/lib/definitions';
+import { useRouter } from 'next/navigation';
 
 type CompanyProfileFormProps = {
   initialProfile: CompanyProfile | null;
@@ -14,6 +15,7 @@ export default function CompanyProfileForm({
   initialProfile,
   invoiceNumberPreview,
 }: CompanyProfileFormProps) {
+  const router = useRouter();
   const initialState: CompanyProfileState = { ok: true, message: null };
   const [state, formAction] = useActionState(saveCompanyProfile, initialState);
 
@@ -34,6 +36,12 @@ export default function CompanyProfileForm({
   const [billingEmail, setBillingEmail] = useState(
     initialProfile?.billing_email ?? '',
   );
+
+  useEffect(() => {
+    if (state.ok && state.message === 'Company profile saved.') {
+      router.refresh();
+    }
+  }, [router, state.message, state.ok]);
 
   return (
     <form action={formAction} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-[0_18px_35px_rgba(0,0,0,0.35)]">

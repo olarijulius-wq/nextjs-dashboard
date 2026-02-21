@@ -8,6 +8,10 @@ import { secondaryButtonClasses } from '@/app/ui/button';
 
 export const metadata: Metadata = {
   title: 'Team Invite',
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 type InvitePageProps = {

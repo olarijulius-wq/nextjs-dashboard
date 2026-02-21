@@ -3,6 +3,10 @@ import { consumeUnsubscribeToken } from '@/app/lib/unsubscribe';
 
 export const metadata: Metadata = {
   title: 'Unsubscribe',
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 type UnsubscribePageProps = {

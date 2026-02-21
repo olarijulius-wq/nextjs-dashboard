@@ -10,7 +10,7 @@ export const metadata: Metadata = {
  
  
 export default async function Page(props: {
-  searchParams?: Promise<{ customerId?: string; interval?: string }>;
+  searchParams?: Promise<{ customerId?: string; interval?: string; returnTo?: string }>;
 }) {
   const searchParams = await props.searchParams;
   const [customers, usage] = await Promise.all([
@@ -19,6 +19,7 @@ export default async function Page(props: {
   ]);
   const initialCustomerId = searchParams?.customerId ?? null;
   const interval = searchParams?.interval;
+  const returnTo = searchParams?.returnTo;
   const isBlocked = usage.maxPerMonth !== null && usage.percentUsed >= 1;
  
   return (
@@ -43,7 +44,13 @@ export default async function Page(props: {
         />
       </div>
       {!isBlocked && (
-        <Form customers={customers} initialCustomerId={initialCustomerId} />
+        <Form
+          customers={customers}
+          initialCustomerId={initialCustomerId}
+          returnTo={returnTo}
+          usage={usage}
+          interval={interval}
+        />
       )}
     </main>
   );

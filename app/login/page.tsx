@@ -6,6 +6,10 @@ import AuthLayout from '@/app/(auth)/_components/auth-layout';
 
 export const metadata: Metadata = {
   title: 'Login',
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 type LoginPageProps = {

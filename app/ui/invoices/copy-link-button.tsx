@@ -5,9 +5,10 @@ import { secondaryButtonClasses } from '@/app/ui/button';
 
 type CopyLinkButtonProps = {
   text: string;
+  label?: string;
 };
 
-export default function CopyLinkButton({ text }: CopyLinkButtonProps) {
+export default function CopyLinkButton({ text, label = 'Copy payment link' }: CopyLinkButtonProps) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -21,12 +22,15 @@ export default function CopyLinkButton({ text }: CopyLinkButtonProps) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className={`${secondaryButtonClasses} px-3 py-2 text-xs`}
-    >
-      {copied ? 'Copied' : 'Copy link'}
-    </button>
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className={`${secondaryButtonClasses} px-3 py-2 text-xs`}
+      >
+        {label}
+      </button>
+      {copied ? <p className="text-xs text-emerald-700 dark:text-emerald-300">Copied</p> : null}
+    </div>
   );
 }

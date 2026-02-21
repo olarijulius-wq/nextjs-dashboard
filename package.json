@@ -4,7 +4,8 @@
     "build": "next build",
     "dev": "next dev --turbopack",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "seo:check": "node scripts/seo-check.mjs"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

@@ -1,11 +1,34 @@
 import Link from 'next/link';
 import { SUPPORT_EMAIL } from '@/app/legal/constants';
 import { lusitana } from '@/app/ui/fonts';
+import type { Metadata } from 'next';
+import TopNav from '@/app/ui/marketing/top-nav';
+import PublicFooter from '@/app/ui/marketing/public-footer';
+
+export const metadata: Metadata = {
+  title: 'Security',
+  description: 'Security controls currently implemented in Lateless.',
+  alternates: {
+    canonical: '/security',
+  },
+  openGraph: {
+    title: 'Lateless Security',
+    description: 'Security controls currently implemented in Lateless.',
+    url: '/security',
+  },
+};
 
 export default function SecurityPage() {
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="mx-auto w-full max-w-3xl px-6 py-16">
+    <div className="min-h-screen bg-black text-white">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:text-black"
+      >
+        Skip to content
+      </a>
+      <TopNav />
+      <main id="main-content" className="mx-auto w-full max-w-3xl px-6 py-16">
         <div className="mb-8">
           <p className="text-xs uppercase tracking-[0.16em] text-neutral-400">
             Trust
@@ -76,7 +99,8 @@ export default function SecurityPage() {
             Back to homepage
           </Link>
         </div>
-      </div>
-    </main>
+      </main>
+      <PublicFooter />
+    </div>
   );
 }

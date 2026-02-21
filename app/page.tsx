@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import {
   BILLING_INTERVALS,
   getAnnualPriceDisplay,
@@ -12,6 +13,26 @@ import { RevealOnMount, RevealOnScroll } from '@/app/ui/motion/reveal';
 import TopNav from '@/app/ui/marketing/top-nav';
 import HeroVisual from '@/app/ui/marketing/hero-visual';
 import { BUTTON_INTERACTIVE, CARD_INTERACTIVE } from '@/app/ui/theme/tokens';
+import PublicFooter from '@/app/ui/marketing/public-footer';
+import {
+  getOrganizationJsonLd,
+  getSoftwareApplicationJsonLd,
+} from '@/app/lib/seo/jsonld';
+
+export const metadata: Metadata = {
+  title: 'Invoicing with Stripe Payments and Reminders',
+  description:
+    'Lateless helps freelancers, agencies, and consultants send invoices, collect Stripe payments, and automate reminders.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: 'Lateless',
+    description:
+      'Send invoices, collect Stripe payments, and automate reminders without dashboard clutter.',
+    url: '/',
+  },
+};
 
 const primaryCtaClasses =
   `inline-flex items-center justify-center rounded-full border border-white bg-white px-5 py-2.5 text-sm font-medium text-black hover:bg-neutral-200 ${BUTTON_INTERACTIVE}`;
@@ -33,13 +54,6 @@ function formatPlatformFee(
   capCents: number,
 ) {
   return `Platform fee: €${(fixedCents / 100).toFixed(2)} + ${percent.toFixed(1)}% (cap €${(capCents / 100).toFixed(2)}) per paid invoice`;
-}
-
-function extractEmail(value: string | undefined) {
-  if (!value) return null;
-  const match = value.match(/<([^>]+)>/);
-  if (match?.[1]) return match[1];
-  return value.includes('@') ? value : null;
 }
 
 const features = [
@@ -82,6 +96,8 @@ const workflowSteps = [
   },
 ];
 
+const useCases = ['Freelancer billing', 'Small agency invoicing', 'Consultant retainers'];
+
 type HomePageProps = {
   searchParams?: Promise<{
     interval?: string;
@@ -96,17 +112,23 @@ export default async function Page(props: HomePageProps) {
   )
     ? (requestedInterval as BillingInterval)
     : 'monthly';
-  const contactEmail =
-    extractEmail(process.env.REMINDER_FROM_EMAIL) ?? 'hello@lateless.org';
+  const organizationJsonLd = getOrganizationJsonLd();
+  const softwareJsonLd = getSoftwareApplicationJsonLd();
 
   return (
-    <main className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-black text-white">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:text-black"
+      >
+        Skip to content
+      </a>
       <TopNav />
-
+      <main id="main-content">
       <section className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center gap-12 px-6 py-16 md:grid-cols-2 md:py-20">
         <RevealOnMount className="space-y-8">
           <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
-            For freelancers and small teams
+            For freelancers, consultants, and small agencies
           </p>
 
           <div className="space-y-5">
@@ -118,8 +140,7 @@ export default async function Page(props: HomePageProps) {
               Automatically.
             </h1>
             <p className="max-w-xl text-base leading-relaxed text-neutral-300 sm:text-lg">
-              Lateless sends smart invoices with one-click Stripe payments,
-              automatic reminders, and late payer analytics.
+              Send invoices and get paid faster with payment links, automatic reminders, and Stripe payouts in one workflow.
             </p>
           </div>
 
@@ -145,6 +166,20 @@ export default async function Page(props: HomePageProps) {
         <RevealOnMount delay={0.08} className="md:pl-6">
           <HeroVisual />
         </RevealOnMount>
+      </section>
+      <section className="border-t border-neutral-900">
+        <div className="mx-auto w-full max-w-6xl px-6 py-10">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-300">
+            Use cases
+          </h2>
+          <ul className="mt-3 grid gap-2 text-sm text-neutral-300 md:grid-cols-3">
+            {useCases.map((item) => (
+              <li key={item} className="rounded-xl border border-neutral-800 bg-neutral-900/45 px-4 py-3">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
       <section id="features" className="border-t border-neutral-900">
@@ -286,6 +321,7 @@ export default async function Page(props: HomePageProps) {
 
                   <ul className="mt-5 space-y-2 text-sm text-neutral-300">
                     <li>{formatLimit(plan.maxPerMonth)}</li>
+                    <li className="text-xs text-neutral-400">Resets monthly. You keep your invoice history.</li>
                     <li>
                       {formatPlatformFee(
                         plan.platformFeeFixedCents,
@@ -334,31 +370,16 @@ await sendReminderEmail({ payLink });`}
         </div>
       </section>
 
-      <footer className="border-t border-neutral-900">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-neutral-400 md:flex-row md:items-center md:justify-between">
-          <p>Lateless - get paid faster, automatically.</p>
-          <div className="flex flex-wrap items-center gap-4">
-            <Link href="/legal/privacy" className="transition hover:text-white">
-              Privacy
-            </Link>
-            <Link href="/legal/terms" className="transition hover:text-white">
-              Terms
-            </Link>
-            <Link href="/legal/cookies" className="transition hover:text-white">
-              Cookies
-            </Link>
-            <a href="#pricing" className="transition hover:text-white">
-              Pricing
-            </a>
-            <Link href="/security" className="transition hover:text-white">
-              Security
-            </Link>
-            <a href={`mailto:${contactEmail}`} className="transition hover:text-white">
-              Contact
-            </a>
-          </div>
-        </div>
-      </footer>
-    </main>
+      </main>
+      <PublicFooter />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
+      />
+    </div>
   );
 }

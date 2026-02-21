@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
 
 type SendInvoiceButtonProps = {
@@ -11,6 +12,7 @@ type SendInvoiceButtonProps = {
   initialStatus?: string | null;
   initialSentAt?: string | null;
   initialError?: string | null;
+  redirectToReturnTo?: boolean;
 };
 
 type SendInvoiceResponse = {
@@ -40,7 +42,9 @@ export default function SendInvoiceButton({
   initialStatus,
   initialSentAt,
   initialError,
+  redirectToReturnTo = false,
 }: SendInvoiceButtonProps) {
+  const router = useRouter();
   const [status, setStatus] = useState<string | null>(initialStatus ?? null);
   const [sentAt, setSentAt] = useState<string | null>(initialSentAt ?? null);
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -73,8 +77,16 @@ export default function SendInvoiceButton({
       setStatus('sent');
       setSentAt(nextSentAt);
       setError(null);
+      router.refresh();
       if (onSent) {
         onSent({ invoiceId, sentAt: nextSentAt });
+      }
+      if (redirectToReturnTo && returnTo) {
+        const nextUrl = new URL(returnTo, window.location.origin);
+        nextUrl.searchParams.set('updated', '1');
+        nextUrl.searchParams.set('updatedInvoice', invoiceId);
+        nextUrl.searchParams.set('highlight', invoiceId);
+        router.push(`${nextUrl.pathname}?${nextUrl.searchParams.toString()}`);
       }
     } catch {
       setStatus('failed');
@@ -92,7 +104,13 @@ export default function SendInvoiceButton({
         disabled={isSending}
         className={compact ? `${primaryButtonClasses} h-9 px-2 text-xs` : `${primaryButtonClasses} h-9 px-3`}
       >
-        {isSending ? 'Sending…' : status === 'sent' ? 'Sent' : 'Send invoice'}
+        {isSending
+          ? 'Sending…'
+          : status === 'sent'
+            ? 'Sent'
+            : status === 'failed'
+              ? 'Retry'
+              : 'Send'}
       </button>
 
       {status === 'sent' && sentLabel ? (

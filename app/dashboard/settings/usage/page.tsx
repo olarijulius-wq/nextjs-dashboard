@@ -235,6 +235,7 @@ export default async function UsageSettingsPage({
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           {formatMonthLabel(monthWindow.monthStart)}. Monthly plan usage is based on Created (app).
         </p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Plan usage resets monthly.</p>
       </header>
 
       {(usageMigrationRequired || teamMigrationRequired) && (

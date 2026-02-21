@@ -3,15 +3,37 @@ import { inter } from '@/app/ui/fonts';
 import { Metadata } from 'next';
 import { ThemeProvider } from '@/app/ui/theme/theme-provider';
 import ThemeInitScript from '@/app/ui/theme/theme-init-script';
+import { getSiteUrl } from '@/app/lib/seo/site-url';
  
 export const metadata: Metadata = {
   title: {
-    template: '%s | Lateless Dashboard',
-    default: 'Lateless Dashboard',
+    template: '%s | Lateless',
+    default: 'Lateless',
   },
-  description: 'Lateless Dashboard built with App Router.',
-  metadataBase: new URL('https://next-learn-dashboard.vercel.sh'),
-  
+  description:
+    'Invoicing with payment links, reminders, and Stripe payouts for freelancers and small teams.',
+  applicationName: 'Lateless',
+  metadataBase: getSiteUrl(),
+  openGraph: {
+    type: 'website',
+    siteName: 'Lateless',
+    title: 'Lateless',
+    description:
+      'Invoicing with payment links, reminders, and Stripe payouts for freelancers and small teams.',
+    images: [{ url: '/opengraph-image.png', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Lateless',
+    description:
+      'Invoicing with payment links, reminders, and Stripe payouts for freelancers and small teams.',
+    images: ['/opengraph-image.png'],
+  },
+  icons: {
+    icon: '/icon.png',
+    apple: '/apple-icon.png',
+  },
+  manifest: '/manifest.webmanifest',
 };
  
 export default function RootLayout({

@@ -114,6 +114,12 @@ export default function InvoicesTable({
                           {invoice.days_overdue === 1 ? '' : 's'}
                         </span>
                       )}
+                      {invoice.last_email_status ? (
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                          Email: {invoice.last_email_status}
+                          {invoice.last_email_sent_at ? ` · ${formatDateToLocal(invoice.last_email_sent_at)}` : ''}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex w-full items-center justify-between pt-4">
@@ -247,6 +253,12 @@ export default function InvoicesTable({
                             {invoice.days_overdue === 1 ? '' : 's'}
                           </span>
                         )}
+                        {invoice.last_email_status ? (
+                          <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                            Email: {invoice.last_email_status}
+                            {invoice.last_email_sent_at ? ` · ${formatDateToLocal(invoice.last_email_sent_at)}` : ''}
+                          </p>
+                        ) : null}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-5 text-center">

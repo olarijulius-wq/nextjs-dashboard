@@ -1,7 +1,16 @@
 import postgres from 'postgres';
 import { redirect } from 'next/navigation';
+import type { Metadata } from 'next';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+
+export const metadata: Metadata = {
+  title: 'Email Verification',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 type PageProps = { params: Promise<{ token?: string }> };
 

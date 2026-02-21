@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatCurrency, formatDateToLocal } from '@/app/lib/utils';
 import {
@@ -20,6 +21,14 @@ import { EmptyState, PageShell, SectionCard, TwoColumnDetail } from '@/app/ui/pa
 export const metadata: Metadata = {
   title: 'Customer',
 };
+
+function formatEmbeddedInvoiceDate(dateStr: string, includeYear = false) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  }).format(new Date(dateStr));
+}
 
 export default async function Page(props: {
   params: Promise<{ id: string }>;
@@ -212,46 +221,51 @@ export default async function Page(props: {
                               {invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}
                             </p>
                             <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
-                              Created {formatDateToLocal(invoice.date)}
+                              Due{' '}
+                              {invoice.due_date
+                                ? formatEmbeddedInvoiceDate(invoice.due_date, true)
+                                : '—'}
                             </p>
                           </div>
                           <InvoiceStatus status={invoice.status} />
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                          <p className="text-sm text-slate-700 dark:text-zinc-300">
+                          <p className="whitespace-nowrap text-sm tabular-nums text-slate-700 dark:text-zinc-300">
                             {formatCurrency(invoice.amount)}
                           </p>
                           <Link
                             href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(customerReturnToPath)}`}
-                            className={`${toolbarButtonClasses} h-8 px-3 text-xs`}
+                            className={`${toolbarButtonClasses} h-8 w-8 px-0 text-xs`}
+                            aria-label={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
+                            title={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                           >
-                            Open invoice
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                           </Link>
                         </div>
                       </article>
                     ))}
                   </div>
 
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="min-w-full text-left">
+                  <div className="hidden w-full md:block">
+                    <table className="w-full table-fixed text-left">
                       <thead className="bg-black text-xs font-semibold uppercase tracking-[0.12em] text-white dark:bg-black dark:text-zinc-100">
                         <tr>
                           <th scope="col" className="px-4 py-4 font-medium">
                             Invoice
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium">
+                          <th scope="col" className="hidden px-3 py-4 font-medium lg:table-cell lg:w-28">
                             Created
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium">
+                          <th scope="col" className="px-3 py-4 font-medium w-24 md:w-28">
                             Due
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium">
+                          <th scope="col" className="px-3 py-4 font-medium w-24">
                             Status
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium">
+                          <th scope="col" className="px-3 py-4 font-medium text-right w-24 md:w-28">
                             Amount
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium text-right">
+                          <th scope="col" className="px-3 py-4 font-medium text-right w-[1%] md:w-20">
                             Action
                           </th>
                         </tr>
@@ -262,27 +276,38 @@ export default async function Page(props: {
                             key={invoice.id}
                             className="transition hover:bg-slate-50 dark:hover:bg-zinc-950"
                           >
-                            <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900 dark:text-zinc-100">
-                              {invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}
+                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-zinc-100">
+                              <span className="block max-w-[14rem] truncate">
+                                {invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}
+                              </span>
                             </td>
-                            <td className="whitespace-nowrap px-3 py-3">
-                              {formatDateToLocal(invoice.date)}
+                            <td
+                              className="hidden whitespace-nowrap px-3 py-3 lg:table-cell"
+                              title={formatDateToLocal(invoice.date)}
+                            >
+                              {formatEmbeddedInvoiceDate(invoice.date)}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-3">
-                              {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+                            <td
+                              className="whitespace-nowrap px-3 py-3"
+                              title={invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
+                            >
+                              {invoice.due_date ? formatEmbeddedInvoiceDate(invoice.due_date) : '—'}
                             </td>
                             <td className="whitespace-nowrap px-3 py-3">
                               <InvoiceStatus status={invoice.status} />
                             </td>
-                            <td className="whitespace-nowrap px-3 py-3">
+                            <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
                               {formatCurrency(invoice.amount)}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-3 text-right">
+                            <td className="w-[1%] whitespace-nowrap px-3 py-3 text-right">
                               <Link
                                 href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(customerReturnToPath)}`}
-                                className={`${toolbarButtonClasses} h-8 px-3 text-xs`}
+                                className={`${toolbarButtonClasses} inline-flex h-8 w-8 items-center justify-center px-0 text-xs lg:w-auto lg:px-2.5`}
+                                aria-label={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
+                                title={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                               >
-                                Open invoice
+                                <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                                <span className="hidden lg:inline">Open</span>
                               </Link>
                             </td>
                           </tr>

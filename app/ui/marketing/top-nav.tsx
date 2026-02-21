@@ -11,16 +11,22 @@ export default function TopNav() {
           Lateless
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
-          <a href="#features" className={navAnchorClasses}>
-            Features
-          </a>
-          <a href="#how-it-works" className={navAnchorClasses}>
-            How it works
-          </a>
-          <a href="#pricing" className={navAnchorClasses}>
+        <nav aria-label="Primary" className="hidden items-center gap-6 md:flex">
+          <Link href="/pricing" className={navAnchorClasses}>
             Pricing
-          </a>
+          </Link>
+          <Link href="/faq" className={navAnchorClasses}>
+            FAQ
+          </Link>
+          <Link href="/help" className={navAnchorClasses}>
+            Help
+          </Link>
+          <Link href="/privacy" className={`${navAnchorClasses} hidden lg:inline`}>
+            Privacy
+          </Link>
+          <Link href="/terms" className={`${navAnchorClasses} hidden lg:inline`}>
+            Terms
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">
