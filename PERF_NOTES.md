@@ -197,6 +197,22 @@ How to confirm throttling:
   - SPF/DKIM/DMARC DNS verification.
   - Migration completeness verification from deploy/migration logs.
 
+## Launch + Smoke All Checks (P0)
+
+- Local run:
+  - Start app with local env and `NEXT_PUBLIC_APP_URL=http://localhost:3000`.
+  - Sign in as allowlisted owner/admin.
+  - Open `/dashboard/settings/all-checks` and click **Run all checks**.
+- Production run:
+  - Set production env (`NODE_ENV=production`, `NEXT_PUBLIC_APP_URL=https://lateless.org`, `STRIPE_CONNECT_MODE=account_links|oauth`, `MAIL_FROM_EMAIL`).
+  - Sign in as allowlisted owner/admin on production.
+  - Open `/dashboard/settings/all-checks` and click **Run all checks**.
+- Status interpretation:
+  - `PASS`: check is healthy.
+  - `WARN`: non-blocking issue to fix soon (for example missing `SENTRY_DSN`).
+  - `FAIL`: release-blocking issue (for example wrong app URL host or missing production mail sender).
+  - `MANUAL`: explicit human verification step required (for example DNS records, Stripe delivery replay).
+
 ## Stripe Connect Smoke-Check Mode Detection
 
 - `stripe-config-sanity` now determines Connect mode in this order:

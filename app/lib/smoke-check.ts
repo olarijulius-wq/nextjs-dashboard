@@ -14,7 +14,11 @@ import {
   fetchWorkspaceEmailSettings,
   sendWorkspaceEmail,
 } from '@/app/lib/smtp-settings';
-import { getEffectiveMailConfig } from '@/app/lib/email';
+import {
+  buildResendFromHeader,
+  getEffectiveMailConfig,
+  isValidMailFromHeader,
+} from '@/app/lib/email';
 import { getMigrationReport } from '@/app/lib/migration-tracker';
 import { resolveSiteUrlDebug } from '@/app/lib/seo/site-url';
 
@@ -43,6 +47,13 @@ export type SmokeCheckPayload = {
   };
   checks: SmokeCheckResult[];
   raw: Record<string, unknown>;
+};
+
+export type SmokeCheckEmailPreview = {
+  provider: 'resend' | 'smtp';
+  effectiveFromHeader: string;
+  fromHeaderValid: boolean;
+  retryAfterSec: number | null;
 };
 
 type SmokeCheckRunRow = {
@@ -613,7 +624,7 @@ async function checkStripeApiReachability(expectedMode: 'live' | 'test'): Promis
   }
 }
 
-async function checkWebhookDedupeSafety(): Promise<{
+async function checkWebhookDedupeSafety(expectedMode: 'live' | 'test'): Promise<{
   check: SmokeCheckResult;
   manual: SmokeCheckResult;
   raw: Record<string, unknown>;
@@ -635,16 +646,41 @@ async function checkWebhookDedupeSafety(): Promise<{
   const eventIdColumn = table === 'billing_events' ? 'stripe_event_id' : 'event_id';
   const timeColumn = table === 'billing_events' ? 'created_at' : 'received_at';
 
+  const manualDetail =
+    expectedMode === 'test'
+      ? [
+          'You are in test mode. Use Stripe CLI local workflow.',
+          'A) Stripe CLI local test workflow:',
+          '1) stripe listen --forward-to http://localhost:3000/api/stripe/webhook',
+          '2) stripe trigger checkout.session.completed (or invoice.payment_succeeded)',
+          '3) Expected: webhook endpoint returns HTTP 200, and replaying same event stays deduped.',
+          'B) Stripe Dashboard workflow:',
+          'Go to Webhook endpoints -> select endpoint -> Recent deliveries.',
+          'Or Developers -> Events -> open event -> Deliveries -> Resend (only appears when deliveries exist).',
+        ].join(' ')
+      : [
+          'You are in livemode. Dashboard deliveries appear only after real live events or after webhook endpoint setup.',
+          'A) Stripe CLI local test workflow (for local validation):',
+          '1) stripe listen --forward-to http://localhost:3000/api/stripe/webhook',
+          '2) stripe trigger checkout.session.completed (or invoice.payment_succeeded)',
+          '3) Expected: webhook endpoint returns HTTP 200.',
+          'B) Stripe Dashboard workflow (live):',
+          'Webhook endpoints -> select endpoint -> Recent deliveries.',
+          'Or Developers -> Events -> open event -> Deliveries -> Resend (only if deliveries exist).',
+        ].join(' ');
+
   const manual: SmokeCheckResult = {
     id: 'stripe-webhook-replay-manual',
     title: 'Stripe webhook replay idempotency (manual)',
     status: 'manual',
-    detail:
-      'Replay the same Stripe event twice from Stripe Dashboard -> Events. Expected: only one DB row for that event id; second delivery should be deduped.',
+    detail: manualDetail,
     fixHint:
-      'Use Stripe Dashboard event replay and verify dedupe in webhook ledger table.',
-    actionLabel: 'Open Stripe events',
-    actionUrl: 'https://dashboard.stripe.com/events',
+      'Use the workflow that matches your mode; verify only one DB row exists per Stripe event id.',
+    actionLabel: expectedMode === 'test' ? 'Open Stripe CLI docs' : 'Open Stripe events',
+    actionUrl:
+      expectedMode === 'test'
+        ? 'https://docs.stripe.com/stripe-cli'
+        : 'https://dashboard.stripe.com/events',
   };
 
   if (!table) {
@@ -790,11 +826,18 @@ async function checkEmailPrimitives(input: {
     const mailFromMissing = config.problems.includes('MAIL_FROM_EMAIL missing');
     const smtpProblem = config.problems.find((problem) => problem.startsWith('smtp'));
     const resendProblem = config.problems.includes('RESEND_API_KEY missing');
+    const effectiveFromHeader = buildResendFromHeader(config.fromEmail);
+    const fromHeaderValid = isValidMailFromHeader(effectiveFromHeader);
+    if (!fromHeaderValid) {
+      config.problems.push('MAIL_FROM header invalid');
+    }
     const failInProd = inProduction && (mailFromMissing || smtpProblem || resendProblem);
-    const warn = !failInProd && (config.problems.length > 0 || latestRateLimited);
+    const warn = !failInProd && (config.problems.length > 0 || latestRateLimited || !fromHeaderValid);
 
     const detailParts = [
       `Provider: ${config.provider}.`,
+      `Effective from header: ${effectiveFromHeader}.`,
+      fromHeaderValid ? 'From header format is valid.' : 'From header format is invalid.',
       config.problems.length > 0 ? `Missing: ${config.problems.join(', ')}.` : 'Provider settings look sane.',
       'Verify domain in Resend dashboard; publish SPF/DKIM/DMARC in DNS; then run test email.',
     ];
@@ -827,6 +870,8 @@ async function checkEmailPrimitives(input: {
         smtpPasswordPresent: settings.smtpPasswordPresent,
         fromEmail: config.fromEmail ? 'set' : 'missing',
         resendApiKeyPresent: config.resendKeyPresent,
+        effectiveFromHeader,
+        fromHeaderValid,
         reminderFromEmailPresent: Boolean(process.env.REMINDER_FROM_EMAIL?.trim()),
         mailFromEmailPresent: Boolean(process.env.MAIL_FROM_EMAIL?.trim()),
         problems: config.problems,
@@ -855,6 +900,145 @@ async function checkEmailPrimitives(input: {
       },
     };
   }
+}
+
+function checkDevEnvSanity(input: {
+  nodeEnv: string | null;
+  siteUrl: URL;
+}): { check: SmokeCheckResult; raw: Record<string, unknown> } {
+  const isDevLocalHost =
+    input.nodeEnv === 'development' &&
+    (input.siteUrl.hostname === 'localhost' || input.siteUrl.hostname === '127.0.0.1');
+  const expected = 'http://localhost:3000';
+  const configured = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+  const matches = configured === expected;
+
+  if (!isDevLocalHost) {
+    return {
+      check: {
+        id: 'dev-env-sanity',
+        title: 'Dev env sanity (localhost checkout URL)',
+        status: 'pass',
+        detail: 'Not applicable (non-development or non-localhost host).',
+        fixHint: 'None.',
+      },
+      raw: {
+        applicable: false,
+        nodeEnv: input.nodeEnv,
+        host: input.siteUrl.hostname,
+        nextPublicAppUrl: configured || null,
+      },
+    };
+  }
+
+  return {
+    check: {
+      id: 'dev-env-sanity',
+      title: 'Dev env sanity (localhost checkout URL)',
+      status: matches ? 'pass' : 'warn',
+      detail: matches
+        ? 'NEXT_PUBLIC_APP_URL is correctly set to http://localhost:3000.'
+        : `NEXT_PUBLIC_APP_URL is ${configured || '(empty)'}, expected http://localhost:3000.`,
+      fixHint: matches
+        ? 'None.'
+        : 'Set NEXT_PUBLIC_APP_URL=http://localhost:3000 in local env, restart dev server, rerun smoke check.',
+    },
+    raw: {
+      applicable: true,
+      expected,
+      configured: configured || null,
+      host: input.siteUrl.hostname,
+      protocol: input.siteUrl.protocol,
+    },
+  };
+}
+
+function checkProdEnvSanity(input: {
+  nodeEnv: string | null;
+  vercelEnv: string | null;
+}): { check: SmokeCheckResult; raw: Record<string, unknown> } {
+  const inProduction = input.nodeEnv === 'production';
+  const appUrlRaw = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+  const connectModeRaw = (process.env.STRIPE_CONNECT_MODE ?? '').trim();
+  const sentryDsnPresent = Boolean((process.env.SENTRY_DSN ?? '').trim());
+  const mailFromPresent = Boolean((process.env.MAIL_FROM_EMAIL ?? '').trim());
+
+  if (!inProduction) {
+    return {
+      check: {
+        id: 'prod-env-sanity',
+        title: 'Prod env sanity (host/connect/sentry/mail)',
+        status: 'pass',
+        detail: 'Not applicable (NODE_ENV is not production).',
+        fixHint: 'None.',
+      },
+      raw: {
+        applicable: false,
+        nodeEnv: input.nodeEnv,
+        vercelEnv: input.vercelEnv,
+      },
+    };
+  }
+
+  let appUrlHost: string | null = null;
+  try {
+    if (appUrlRaw) {
+      appUrlHost = new URL(appUrlRaw).hostname.toLowerCase();
+    }
+  } catch {
+    appUrlHost = null;
+  }
+
+  const failures: string[] = [];
+  const warnings: string[] = [];
+
+  if (!appUrlRaw) {
+    failures.push('NEXT_PUBLIC_APP_URL missing.');
+  } else if (appUrlHost !== 'lateless.org') {
+    failures.push(`NEXT_PUBLIC_APP_URL must resolve to lateless.org (current: ${appUrlRaw}).`);
+  }
+
+  if (!connectModeRaw) {
+    failures.push('STRIPE_CONNECT_MODE must be set to account_links or oauth.');
+  }
+
+  if (!mailFromPresent) {
+    failures.push('MAIL_FROM_EMAIL is required in production.');
+  }
+
+  if (!sentryDsnPresent) {
+    warnings.push('SENTRY_DSN is not set.');
+  }
+
+  return {
+    check: {
+      id: 'prod-env-sanity',
+      title: 'Prod env sanity (host/connect/sentry/mail)',
+      status: failures.length > 0 ? 'fail' : warnings.length > 0 ? 'warn' : 'pass',
+      detail:
+        failures.length > 0
+          ? failures.join(' ')
+          : warnings.length > 0
+            ? warnings.join(' ')
+            : 'Production env sanity checks passed.',
+      fixHint:
+        failures.length > 0
+          ? 'Set NEXT_PUBLIC_APP_URL=https://lateless.org, STRIPE_CONNECT_MODE=account_links|oauth, and MAIL_FROM_EMAIL in production env, then redeploy.'
+          : warnings.length > 0
+            ? 'Set SENTRY_DSN in production env for observability.'
+            : 'None.',
+    },
+    raw: {
+      applicable: true,
+      appUrl: appUrlRaw || null,
+      appUrlHost,
+      stripeConnectMode: connectModeRaw || null,
+      sentryDsnPresent,
+      mailFromEmailPresent: mailFromPresent,
+      nodeEnv: input.nodeEnv,
+      vercelEnv: input.vercelEnv,
+    },
+  };
 }
 
 async function checkDbSchemaSanity(nodeEnv: string | null, vercelEnv: string | null): Promise<{
@@ -1045,7 +1229,7 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
 
   const stripeConfig = await checkStripeConfiguration(nodeEnv, vercelEnv);
   const stripeApi = await checkStripeApiReachability(stripeConfig.expectedMode);
-  const webhook = await checkWebhookDedupeSafety();
+  const webhook = await checkWebhookDedupeSafety(stripeConfig.expectedMode);
   const email = await checkEmailPrimitives({
     workspaceId: context.workspaceId,
     actorEmail: context.userEmail,
@@ -1054,6 +1238,8 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
   });
   const dbSchema = await checkDbSchemaSanity(nodeEnv, vercelEnv);
   const observability = await checkObservability(nodeEnv, vercelEnv);
+  const devEnvSanity = checkDevEnvSanity({ nodeEnv, siteUrl: siteUrlForChecks });
+  const prodEnvSanity = checkProdEnvSanity({ nodeEnv, vercelEnv });
 
   const checks = [
     stripeConfig.check,
@@ -1064,6 +1250,8 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
     ...email.manualChecks,
     dbSchema.check,
     dbSchema.manual,
+    devEnvSanity.check,
+    prodEnvSanity.check,
     ...observability.checks,
   ];
 
@@ -1082,6 +1270,8 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
       webhook: webhook.raw,
       email: email.raw,
       dbSchema: dbSchema.raw,
+      devEnvSanity: devEnvSanity.raw,
+      prodEnvSanity: prodEnvSanity.raw,
       observability: observability.raw,
       resolver: {
         source: resolved.source,
@@ -1112,13 +1302,42 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
   return payload;
 }
 
-export async function getSmokeCheckPingPayload() {
+export async function getSmokeCheckPingPayload(context: WorkspaceContext) {
   const resolved = resolveSiteUrlDebug();
   const nodeEnv = process.env.NODE_ENV ?? null;
   const siteUrlForChecks = resolveSiteUrlForSmokeChecks({
     nodeEnv,
     resolvedSiteUrl: resolved.url,
   });
+  const settings = await fetchWorkspaceEmailSettings(context.workspaceId).catch(() => null);
+  const config = getEffectiveMailConfig({
+    workspaceSettings: settings
+      ? {
+          provider: settings.provider,
+          fromName: settings.fromName,
+          fromEmail: settings.fromEmail,
+          replyTo: settings.replyTo,
+          smtpHost: settings.smtpHost,
+          smtpPort: settings.smtpPort,
+          smtpUsername: settings.smtpUsername,
+          smtpPasswordPresent: settings.smtpPasswordPresent,
+        }
+      : null,
+  });
+  const effectiveFromHeader = buildResendFromHeader(config.fromEmail);
+  const fromHeaderValid = isValidMailFromHeader(effectiveFromHeader);
+  const latestTest = await getLatestTestEmailAction({
+    workspaceId: context.workspaceId,
+    actorEmail: context.userEmail,
+  });
+  const retryAfterMs = latestTest?.payload?.sentAt
+    ? new Date(latestTest.payload.sentAt).getTime() + TEST_EMAIL_WINDOW_MS - Date.now()
+    : null;
+  const retryAfterSec =
+    retryAfterMs !== null && Number.isFinite(retryAfterMs)
+      ? Math.max(0, Math.ceil(retryAfterMs / 1000))
+      : null;
+
   return {
     env: {
       nodeEnv,
@@ -1126,6 +1345,12 @@ export async function getSmokeCheckPingPayload() {
       siteUrl: siteUrlForChecks.toString(),
     },
     lastRun: await getLatestSmokeCheckRun(),
+    emailPreview: {
+      provider: config.provider,
+      effectiveFromHeader,
+      fromHeaderValid,
+      retryAfterSec: retryAfterSec && retryAfterSec > 0 ? retryAfterSec : null,
+    } as SmokeCheckEmailPreview,
   };
 }
 
@@ -1147,6 +1372,56 @@ export async function sendSmokeCheckTestEmail(context: WorkspaceContext): Promis
     resolvedSiteUrl: resolved.url,
   });
   const earliestAllowed = new Date(now.getTime() - TEST_EMAIL_WINDOW_MS);
+  const settings = await fetchWorkspaceEmailSettings(context.workspaceId).catch(() => null);
+  const config = getEffectiveMailConfig({
+    workspaceSettings: settings
+      ? {
+          provider: settings.provider,
+          fromName: settings.fromName,
+          fromEmail: settings.fromEmail,
+          replyTo: settings.replyTo,
+          smtpHost: settings.smtpHost,
+          smtpPort: settings.smtpPort,
+          smtpUsername: settings.smtpUsername,
+          smtpPasswordPresent: settings.smtpPasswordPresent,
+        }
+      : null,
+  });
+  const effectiveFromHeader = buildResendFromHeader(config.fromEmail);
+  const fromHeaderValid = isValidMailFromHeader(effectiveFromHeader);
+  if (!fromHeaderValid) {
+    const payload: TestEmailActionPayload = {
+      kind: 'test_email',
+      workspaceId,
+      actorEmail,
+      recipient,
+      sentAt: now.toISOString(),
+      success: false,
+      rateLimited: false,
+      retryAfterSec: null,
+      provider: null,
+      messageId: null,
+      error: `Invalid from header format: ${effectiveFromHeader}`,
+    };
+    await persistSmokeCheckRow({
+      actorEmail,
+      workspaceId,
+      env: {
+        node_env: nodeEnv,
+        vercel_env: process.env.VERCEL_ENV ?? null,
+        site_url: siteUrlForChecks.toString(),
+      },
+      payload: payload as unknown as Record<string, unknown>,
+      ok: false,
+    });
+    return {
+      ok: false,
+      rateLimited: false,
+      retryAfterSec: null,
+      message: `Invalid from header format: ${effectiveFromHeader}`,
+      sentAt: null,
+    };
+  }
 
   let recent: { ran_at: Date } | undefined;
   try {

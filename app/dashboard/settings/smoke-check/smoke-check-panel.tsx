@@ -27,6 +27,13 @@ type SmokeCheckPayload = {
   raw: Record<string, unknown>;
 };
 
+type SmokeCheckEmailPreview = {
+  provider: 'resend' | 'smtp';
+  effectiveFromHeader: string;
+  fromHeaderValid: boolean;
+  retryAfterSec: number | null;
+};
+
 type SmokeCheckRunRecord = {
   ranAt: string;
   actorEmail: string;
@@ -43,6 +50,7 @@ type SmokeCheckRunRecord = {
 type PingPayload = {
   ok: boolean;
   lastRun: SmokeCheckRunRecord | null;
+  emailPreview?: SmokeCheckEmailPreview;
 };
 
 function formatRunTime(value: string | null | undefined, timezone: string) {
@@ -71,15 +79,18 @@ function statusChip(status: CheckStatus) {
 
 export default function SmokeCheckPanel({
   initialLastRun,
+  initialEmailPreview,
   timezone,
 }: {
   initialLastRun: SmokeCheckRunRecord | null;
+  initialEmailPreview: SmokeCheckEmailPreview | null;
   timezone: string;
 }) {
   const [running, setRunning] = useState(false);
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [result, setResult] = useState<SmokeCheckPayload | null>(initialLastRun?.payload ?? null);
   const [lastRun, setLastRun] = useState<SmokeCheckRunRecord | null>(initialLastRun);
+  const [emailPreview, setEmailPreview] = useState<SmokeCheckEmailPreview | null>(initialEmailPreview);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -97,9 +108,12 @@ export default function SmokeCheckPanel({
     const pingRes = await fetch('/api/settings/smoke-check/ping', { method: 'GET' });
     if (!pingRes.ok) return;
     const ping = (await pingRes.json().catch(() => null)) as PingPayload | null;
-    if (!ping?.ok || !ping.lastRun) return;
-    setLastRun(ping.lastRun);
-    setResult(ping.lastRun.payload);
+    if (!ping?.ok) return;
+    if (ping.lastRun) {
+      setLastRun(ping.lastRun);
+      setResult(ping.lastRun.payload);
+    }
+    setEmailPreview(ping.emailPreview ?? null);
   }
 
   async function runChecks() {
@@ -185,6 +199,13 @@ export default function SmokeCheckPanel({
               Resolved site URL: {result.env.siteUrl}
             </p>
           ) : null}
+          {emailPreview ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Effective from header: <span className="font-mono">{emailPreview.effectiveFromHeader}</span>{' '}
+              · {emailPreview.fromHeaderValid ? 'valid' : 'invalid'}
+              {emailPreview.retryAfterSec ? ` · retry in ${emailPreview.retryAfterSec}s` : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" onClick={runChecks} aria-disabled={running}>
@@ -193,7 +214,7 @@ export default function SmokeCheckPanel({
           <button
             type="button"
             onClick={sendTestEmail}
-            disabled={sendingTestEmail}
+            disabled={sendingTestEmail || (emailPreview ? !emailPreview.fromHeaderValid : false)}
             className={`${secondaryButtonClasses} h-10 px-3`}
           >
             {sendingTestEmail ? 'Sending…' : 'Send test email'}
@@ -238,6 +259,43 @@ export default function SmokeCheckPanel({
           {note}
         </div>
       ) : null}
+      {emailPreview && !emailPreview.fromHeaderValid ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-200">
+          Send test email is disabled until from-header is valid: {emailPreview.effectiveFromHeader}
+        </div>
+      ) : null}
+
+      <details className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-950">
+        <summary className="cursor-pointer text-sm font-medium text-slate-800 dark:text-slate-200">
+          Verify DNS (SPF, DKIM, DMARC)
+        </summary>
+        <div className="mt-3 space-y-2">
+          <details className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+            <summary className="cursor-pointer text-sm font-medium text-slate-800 dark:text-slate-200">
+              SPF
+            </summary>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              Add/update your root TXT record to include your sender provider (for Resend, include their SPF include target), then wait for DNS propagation.
+            </p>
+          </details>
+          <details className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+            <summary className="cursor-pointer text-sm font-medium text-slate-800 dark:text-slate-200">
+              DKIM
+            </summary>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              Publish the DKIM CNAME/TXT selectors exactly as shown in your provider dashboard, then verify the domain there once records resolve.
+            </p>
+          </details>
+          <details className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+            <summary className="cursor-pointer text-sm font-medium text-slate-800 dark:text-slate-200">
+              DMARC
+            </summary>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              Add a TXT record at <span className="font-mono">_dmarc.yourdomain.com</span>, start with policy <span className="font-mono">p=none</span>, and include report addresses before tightening policy.
+            </p>
+          </details>
+        </div>
+      </details>
 
       <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800">
         <table className="min-w-full divide-y divide-neutral-200 text-sm dark:divide-neutral-800">

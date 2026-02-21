@@ -58,16 +58,20 @@ function extractEmailAddress(value: string | null | undefined): string {
   return candidate.toLowerCase();
 }
 
+function isSimpleEmail(value: string): boolean {
+  return /^[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+$/.test(value);
+}
+
 function sanitizeFromName(value: string): string {
   return value.replace(/[\r\n<>"]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 export function resolveReminderFromEmail(): string {
-  const reminderFrom = extractEmailAddress(process.env.REMINDER_FROM_EMAIL);
-  if (reminderFrom) return reminderFrom;
-
   const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
   if (mailFrom) return mailFrom;
+
+  const reminderFrom = extractEmailAddress(process.env.REMINDER_FROM_EMAIL);
+  if (reminderFrom) return reminderFrom;
 
   return 'noreply@lateless.app';
 }
@@ -89,11 +93,20 @@ export function buildResendFromHeader(fromEmail: string): string {
     extractEmailAddress(process.env.MAIL_FROM_EMAIL) ||
     extractEmailAddress(process.env.REMINDER_FROM_EMAIL) ||
     'noreply@lateless.app';
-  const explicitName = sanitizeFromName(normalizeText(process.env.MAIL_FROM_NAME));
-  if (!explicitName) {
-    return email;
+  return buildMailFromHeader(email, resolveMailFromName());
+}
+
+export function isValidMailFromHeader(value: string): boolean {
+  const trimmed = normalizeText(value);
+  if (!trimmed) return false;
+  if (trimmed.includes('\r') || trimmed.includes('\n')) return false;
+  const bracketMatch = trimmed.match(/^([^<>]+)\s<([^<>]+)>$/);
+  if (bracketMatch) {
+    const name = sanitizeFromName(bracketMatch[1] ?? '');
+    const email = (bracketMatch[2] ?? '').trim().toLowerCase();
+    return Boolean(name) && isSimpleEmail(email);
   }
-  return `${explicitName} <${email}>`;
+  return isSimpleEmail(trimmed.toLowerCase());
 }
 
 export function getEffectiveMailConfig(input?: {

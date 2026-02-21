@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import {
   getLatestSmokeCheckRun,
   getSmokeCheckAccessContext,
+  getSmokeCheckPingPayload,
 } from '@/app/lib/smoke-check';
 import { PageShell, SectionCard } from '@/app/ui/page-layout';
 import SmokeCheckPanel from './smoke-check-panel';
@@ -21,7 +22,10 @@ export default async function SmokeCheckPage() {
     notFound();
   }
 
-  const lastRun = await getLatestSmokeCheckRun();
+  const [lastRun, ping] = await Promise.all([
+    getLatestSmokeCheckRun(),
+    getSmokeCheckPingPayload(context),
+  ]);
 
   return (
     <PageShell
@@ -30,7 +34,11 @@ export default async function SmokeCheckPage() {
       className="max-w-5xl"
     >
       <SectionCard>
-        <SmokeCheckPanel initialLastRun={lastRun} timezone="Europe/Tallinn" />
+        <SmokeCheckPanel
+          initialLastRun={lastRun}
+          initialEmailPreview={ping.emailPreview}
+          timezone="Europe/Tallinn"
+        />
       </SectionCard>
     </PageShell>
   );

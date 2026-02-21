@@ -161,6 +161,20 @@ export default async function SettingsPage(props: {
               description: 'Run SEO, robots, and metadata launch checks.',
             }]
           : []),
+        ...(canViewLaunchCheck && canViewSmokeDiagnostics
+          ? [{
+              title: 'All checks',
+              href: '/dashboard/settings/all-checks',
+              description: 'Run launch + smoke checks and copy a markdown report.',
+            }]
+          : []),
+        ...(canViewSmokeDiagnostics
+          ? [{
+              title: 'Smoke check',
+              href: '/dashboard/settings/smoke-check',
+              description: 'Run payments, email, webhook, schema, and env sanity checks.',
+            }]
+          : []),
         ...(canViewSmokeDiagnostics
           ? [{
               title: 'Migrations',

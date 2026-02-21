@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   try {
-    const payload = await getSmokeCheckPingPayload();
+    const payload = await getSmokeCheckPingPayload(context);
     return noindexJson({ ok: true, ...payload });
   } catch (error) {
     console.error('Production smoke check ping failed:', error);

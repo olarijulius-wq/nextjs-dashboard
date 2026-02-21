@@ -49,6 +49,7 @@ export default function SettingsSectionsNav({
   const hasWorkspaceAdminRole = currentUserRole === 'owner' || currentUserRole === 'admin';
   const canViewSmokeCheck =
     hasWorkspaceAdminRole && isSmokeCheckAdminEmail(currentUserEmail);
+  const canViewAllChecks = canViewLaunchCheck && canViewSmokeCheck;
 
   const sections = canViewSettingsReminders
     ? [...baseSections, remindersSection]
@@ -58,9 +59,13 @@ export default function SettingsSectionsNav({
     ? [...sections, { name: 'Launch readiness', href: '/dashboard/settings/launch-check' }]
     : sections;
 
-  const withSmokeCheck = canViewSmokeCheck
-    ? [...withLaunchCheck, { name: 'Smoke check', href: '/dashboard/settings/smoke-check' }]
+  const withAllChecks = canViewAllChecks
+    ? [...withLaunchCheck, { name: 'All checks', href: '/dashboard/settings/all-checks' }]
     : withLaunchCheck;
+
+  const withSmokeCheck = canViewSmokeCheck
+    ? [...withAllChecks, { name: 'Smoke check', href: '/dashboard/settings/smoke-check' }]
+    : withAllChecks;
 
   const withMigrations = canViewSmokeCheck
     ? [...withSmokeCheck, { name: 'Migrations', href: '/dashboard/settings/migrations' }]
