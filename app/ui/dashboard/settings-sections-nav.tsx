@@ -36,10 +36,12 @@ const remindersSection = {
 
 export default function SettingsSectionsNav({
   canViewFunnel = false,
+  diagnosticsEnabled = false,
   currentUserEmail,
   currentUserRole,
 }: {
   canViewFunnel?: boolean;
+  diagnosticsEnabled?: boolean;
   currentUserEmail?: string | null;
   currentUserRole?: 'owner' | 'admin' | 'member' | null;
 }) {
@@ -49,7 +51,8 @@ export default function SettingsSectionsNav({
   const canViewLaunchCheck = hasWorkspaceAdminRole && isLaunchCheckAdminEmail(currentUserEmail);
   const canViewSmokeCheck =
     hasWorkspaceAdminRole && isSmokeCheckAdminEmail(currentUserEmail);
-  const canViewAllChecks = canViewLaunchCheck && canViewSmokeCheck;
+  const canViewAllChecks =
+    diagnosticsEnabled && canViewLaunchCheck && canViewSmokeCheck;
 
   const sections = canViewSettingsReminders
     ? [...baseSections, remindersSection]
@@ -63,11 +66,11 @@ export default function SettingsSectionsNav({
     ? [...withLaunchCheck, { name: 'All checks', href: '/dashboard/settings/all-checks' }]
     : withLaunchCheck;
 
-  const withSmokeCheck = canViewSmokeCheck
+  const withSmokeCheck = diagnosticsEnabled && canViewSmokeCheck
     ? [...withAllChecks, { name: 'Smoke check', href: '/dashboard/settings/smoke-check' }]
     : withAllChecks;
 
-  const withMigrations = canViewSmokeCheck
+  const withMigrations = diagnosticsEnabled && canViewSmokeCheck
     ? [...withSmokeCheck, { name: 'Migrations', href: '/dashboard/settings/migrations' }]
     : withSmokeCheck;
 

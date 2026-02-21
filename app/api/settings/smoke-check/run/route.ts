@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import {
   getSmokeCheckAccessDecision,
   runProductionSmokeChecks,
@@ -16,12 +17,16 @@ function noindexJson(body: unknown, status = 200) {
 }
 
 export async function POST() {
+  if (!diagnosticsEnabled()) {
+    return noindexJson({ ok: false, error: 'Not found' }, 404);
+  }
+
   const decision = await getSmokeCheckAccessDecision();
   if (!decision.allowed || !decision.context) {
     if (process.env.NODE_ENV === 'development') {
       console.warn(`[diag-gate] /api/settings/smoke-check/run denied: ${decision.reason}`);
     }
-    return noindexJson({ ok: false, error: 'Not Found' }, 404);
+    return noindexJson({ ok: false, error: 'Not found' }, 404);
   }
 
   try {

@@ -5,6 +5,14 @@ type AdminGateDecision = {
   reason: string;
 };
 
+type DiagnosticsEnabledSource = 'default' | 'env';
+
+export type DiagnosticsEnabledState = {
+  enabled: boolean;
+  source: DiagnosticsEnabledSource;
+  raw: string | null;
+};
+
 function normalizeEmail(email: string | null | undefined): string {
   return (email ?? '').trim().toLowerCase();
 }
@@ -127,4 +135,40 @@ export function getSmokeCheckAdminEmailDecision(
 
 export function isSmokeCheckAdminEmail(email: string | null | undefined): boolean {
   return getSmokeCheckAdminEmailDecision(email).allowed;
+}
+
+function parseBooleanEnv(value: string | undefined): boolean | null {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+
+  return null;
+}
+
+export function getDiagnosticsEnabledState(): DiagnosticsEnabledState {
+  const parsed = parseBooleanEnv(process.env.DIAGNOSTICS_ENABLED);
+  if (parsed !== null) {
+    return {
+      enabled: parsed,
+      source: 'env',
+      raw: process.env.DIAGNOSTICS_ENABLED ?? null,
+    };
+  }
+
+  return {
+    enabled: process.env.NODE_ENV === 'development',
+    source: 'default',
+    raw: process.env.DIAGNOSTICS_ENABLED ?? null,
+  };
+}
+
+export function diagnosticsEnabled(): boolean {
+  return getDiagnosticsEnabledState().enabled;
 }

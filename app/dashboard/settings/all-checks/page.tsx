@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import {
   getLaunchCheckAccessDecision,
   getLatestLaunchCheckRun,
@@ -17,6 +18,10 @@ export const metadata: Metadata = {
 };
 
 export default async function AllChecksPage() {
+  if (!diagnosticsEnabled()) {
+    notFound();
+  }
+
   const [launchDecision, smokeDecision] = await Promise.all([
     getLaunchCheckAccessDecision(),
     getSmokeCheckAccessDecision(),

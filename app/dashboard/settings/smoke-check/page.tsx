@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import {
   getSmokeCheckAccessDecision,
   getLatestSmokeCheckRun,
@@ -17,6 +18,10 @@ export const metadata: Metadata = {
 };
 
 export default async function SmokeCheckPage() {
+  if (!diagnosticsEnabled()) {
+    notFound();
+  }
+
   const decision = await getSmokeCheckAccessDecision();
   if (!decision.allowed || !decision.context) {
     if (process.env.NODE_ENV === 'development') {

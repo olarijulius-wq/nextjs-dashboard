@@ -5,7 +5,11 @@ import {
   fetchStripeConnectStatusForUser,
   requireUserEmail,
 } from '@/app/lib/data';
-import { isLaunchCheckAdminEmail, isSmokeCheckAdminEmail } from '@/app/lib/admin-gates';
+import {
+  diagnosticsEnabled,
+  isLaunchCheckAdminEmail,
+  isSmokeCheckAdminEmail,
+} from '@/app/lib/admin-gates';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import { primaryButtonClasses } from '@/app/ui/button';
 import { RevealOnScroll } from '@/app/ui/motion/reveal';
@@ -77,6 +81,7 @@ export default async function SettingsPage(props: {
     interval?: string;
   }>;
 }) {
+  const diagnosticsEnabledFlag = diagnosticsEnabled();
   const searchParams = await props.searchParams;
   const hasBillingParams =
     searchParams?.success ||
@@ -102,7 +107,9 @@ export default async function SettingsPage(props: {
     hasWorkspaceAdminRole = context.userRole === 'owner' || context.userRole === 'admin';
     workspaceEmail = context.userEmail;
     canViewSmokeDiagnostics =
-      hasWorkspaceAdminRole && isSmokeCheckAdminEmail(context.userEmail);
+      diagnosticsEnabledFlag &&
+      hasWorkspaceAdminRole &&
+      isSmokeCheckAdminEmail(context.userEmail);
   } catch {
     hasWorkspaceAdminRole = false;
     workspaceEmail = userEmail;

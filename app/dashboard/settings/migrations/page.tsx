@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import { getMigrationReport } from '@/app/lib/migration-tracker';
 import { getSmokeCheckAccessDecision } from '@/app/lib/smoke-check';
 import { SectionCard } from '@/app/ui/page-layout';
@@ -14,6 +15,10 @@ export const metadata: Metadata = {
 };
 
 export default async function MigrationsPage() {
+  if (!diagnosticsEnabled()) {
+    notFound();
+  }
+
   const decision = await getSmokeCheckAccessDecision();
   if (!decision.allowed) {
     if (process.env.NODE_ENV === 'development') {

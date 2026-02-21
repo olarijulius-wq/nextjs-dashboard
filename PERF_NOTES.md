@@ -213,6 +213,18 @@ How to confirm throttling:
   - `FAIL`: release-blocking issue (for example wrong app URL host or missing production mail sender).
   - `MANUAL`: explicit human verification step required (for example DNS records, Stripe delivery replay).
 
+## Diagnostics Kill Switch (Prod Safety)
+
+- Env: `DIAGNOSTICS_ENABLED`
+  - ON values: `1`, `true`, `yes`
+  - OFF values: `0`, `false`, `no`
+- Defaults:
+  - `NODE_ENV=development`: defaults to ON when unset.
+  - `NODE_ENV=production` (includes Vercel preview + production): defaults to OFF when unset.
+- Production recommendation:
+  - Keep `DIAGNOSTICS_ENABLED=0` in production by default.
+  - Temporarily set `DIAGNOSTICS_ENABLED=1` only when running diagnostics as allowlisted owner/admin, then set it back to `0`.
+
 ## Stripe Connect Smoke-Check Mode Detection
 
 - `stripe-config-sanity` now determines Connect mode in this order:

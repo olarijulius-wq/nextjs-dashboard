@@ -8,7 +8,10 @@ import {
   ensureWorkspaceContextForCurrentUser,
   type WorkspaceContext,
 } from '@/app/lib/workspaces';
-import { getSmokeCheckAdminEmailDecision } from '@/app/lib/admin-gates';
+import {
+  getDiagnosticsEnabledState,
+  getSmokeCheckAdminEmailDecision,
+} from '@/app/lib/admin-gates';
 import {
   SMTP_MIGRATION_REQUIRED_CODE,
   fetchWorkspaceEmailSettings,
@@ -1265,6 +1268,7 @@ async function checkObservability(nodeEnv: string | null, vercelEnv: string | nu
 }
 
 export async function runProductionSmokeChecks(context: WorkspaceContext): Promise<SmokeCheckPayload> {
+  const diagnosticsState = getDiagnosticsEnabledState();
   const nodeEnv = process.env.NODE_ENV ?? null;
   const vercelEnv = process.env.VERCEL_ENV ?? null;
   const resolved = resolveSiteUrlDebug();
@@ -1329,6 +1333,8 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
         paymentChargesAttempted: false,
         webhookWritesAttempted: false,
         redirectMode: 'manual',
+        diagnosticsEnabled: diagnosticsState.enabled,
+        diagnosticsEnabledSource: diagnosticsState.source,
       },
     },
   };
@@ -1349,6 +1355,7 @@ export async function runProductionSmokeChecks(context: WorkspaceContext): Promi
 }
 
 export async function getSmokeCheckPingPayload(context: WorkspaceContext) {
+  const diagnosticsState = getDiagnosticsEnabledState();
   const resolved = resolveSiteUrlDebug();
   const nodeEnv = process.env.NODE_ENV ?? null;
   const siteUrlForChecks = resolveSiteUrlForSmokeChecks({
@@ -1397,6 +1404,12 @@ export async function getSmokeCheckPingPayload(context: WorkspaceContext) {
       fromHeaderValid,
       retryAfterSec: retryAfterSec && retryAfterSec > 0 ? retryAfterSec : null,
     } as SmokeCheckEmailPreview,
+    raw: {
+      safety: {
+        diagnosticsEnabled: diagnosticsState.enabled,
+        diagnosticsEnabledSource: diagnosticsState.source,
+      },
+    },
   };
 }
 

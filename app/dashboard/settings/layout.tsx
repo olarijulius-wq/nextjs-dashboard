@@ -1,4 +1,5 @@
 import SettingsSectionsNav from '@/app/ui/dashboard/settings-sections-nav';
+import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import { isReminderManualRunAdmin } from '@/app/lib/reminder-admin';
 import { PageShell, SectionCard } from '@/app/ui/page-layout';
@@ -8,6 +9,7 @@ export default async function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const diagnosticsEnabledFlag = diagnosticsEnabled();
   let canViewFunnel = false;
   let currentUserEmail: string | null = null;
   let currentUserRole: 'owner' | 'admin' | 'member' | null = null;
@@ -35,6 +37,7 @@ export default async function SettingsLayout({
       <SectionCard className="p-4">
         <SettingsSectionsNav
           canViewFunnel={canViewFunnel}
+          diagnosticsEnabled={diagnosticsEnabledFlag}
           currentUserEmail={currentUserEmail}
           currentUserRole={currentUserRole}
         />
