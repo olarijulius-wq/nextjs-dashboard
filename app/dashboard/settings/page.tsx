@@ -5,6 +5,7 @@ import {
   fetchStripeConnectStatusForUser,
   requireUserEmail,
 } from '@/app/lib/data';
+import { isLaunchCheckAdminEmail } from '@/app/lib/admin-gates';
 import { primaryButtonClasses } from '@/app/ui/button';
 import { RevealOnScroll } from '@/app/ui/motion/reveal';
 import { NEUTRAL_FOCUS_RING_CLASSES } from '@/app/ui/dashboard/neutral-interaction';
@@ -92,6 +93,7 @@ export default async function SettingsPage(props: {
   }
 
   const userEmail = await requireUserEmail();
+  const canViewLaunchCheck = isLaunchCheckAdminEmail(userEmail);
   const connectStatus = await fetchStripeConnectStatusForUser(userEmail);
   const payoutsBadge = connectStatus.isReadyForTransfers
     ? {
@@ -140,7 +142,13 @@ export default async function SettingsPage(props: {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-      {settingCards.map((card, index) => (
+      {[...settingCards, ...(canViewLaunchCheck
+        ? [{
+            title: 'Launch readiness',
+            href: '/dashboard/settings/launch-check',
+            description: 'Run SEO, robots, and metadata launch checks.',
+          }]
+        : [])].map((card, index) => (
         <RevealOnScroll key={card.href} delay={index * 0.04}>
           <Link
             href={card.href}

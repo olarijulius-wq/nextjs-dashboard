@@ -8,7 +8,7 @@ import {
   NEUTRAL_FOCUS_RING_CLASSES,
   NEUTRAL_INACTIVE_ITEM_CLASSES,
 } from '@/app/ui/dashboard/neutral-interaction';
-import { isSettingsRemindersAdminEmail } from '@/app/lib/admin-gates';
+import { isLaunchCheckAdminEmail, isSettingsRemindersAdminEmail } from '@/app/lib/admin-gates';
 
 const baseSections = [
   { name: 'Overview', href: '/dashboard/settings' },
@@ -39,14 +39,19 @@ export default function SettingsSectionsNav({
 }) {
   const pathname = usePathname();
   const canViewSettingsReminders = isSettingsRemindersAdminEmail(currentUserEmail);
+  const canViewLaunchCheck = isLaunchCheckAdminEmail(currentUserEmail);
 
   const sections = canViewSettingsReminders
     ? [...baseSections, remindersSection]
     : baseSections;
 
-  const resolvedSections = canViewFunnel
-    ? [...sections, { name: 'Funnel', href: '/dashboard/settings/funnel' }]
+  const withLaunchCheck = canViewLaunchCheck
+    ? [...sections, { name: 'Launch readiness', href: '/dashboard/settings/launch-check' }]
     : sections;
+
+  const resolvedSections = canViewFunnel
+    ? [...withLaunchCheck, { name: 'Funnel', href: '/dashboard/settings/funnel' }]
+    : withLaunchCheck;
 
   return (
     <div className="flex flex-wrap gap-2">
