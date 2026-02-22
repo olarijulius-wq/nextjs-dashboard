@@ -35,11 +35,12 @@ export default async function Layout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white text-slate-900 md:flex-row md:overflow-hidden dark:bg-black dark:text-slate-100">
-      <div className="sticky top-0 z-50 w-full flex-none border-b border-neutral-200 bg-white pt-[env(safe-area-inset-top)] md:static md:z-auto md:w-64 md:border-b-0 md:border-r md:pt-0 dark:border-neutral-800 dark:bg-black">
+    <div className="flex h-screen overflow-hidden bg-white text-slate-900 dark:bg-black dark:text-slate-100">
+      <aside className="z-50 w-full flex-none overflow-hidden border-b border-neutral-200 bg-white pt-[env(safe-area-inset-top)] md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0 md:border-b-0 md:border-r md:pt-0 dark:border-neutral-800 dark:bg-black">
         <SideNav />
-      </div>
-      <div className="grow bg-white p-6 md:overflow-y-auto md:p-12 dark:bg-black">
+      </aside>
+      {/* min-w-0 lets long children shrink instead of forcing page-level horizontal overflow */}
+      <main className="min-w-0 flex-1 h-screen overflow-y-auto overflow-x-hidden bg-white p-6 md:p-12 dark:bg-black">
         {showRecoveryBanner ? (
           <div className="mb-4">
             <BillingRecoveryBanner />
@@ -51,7 +52,7 @@ export default async function Layout({ children }: { children: React.ReactNode }
           </div>
         ) : null}
         {children}
-      </div>
+      </main>
     </div>
   );
 }

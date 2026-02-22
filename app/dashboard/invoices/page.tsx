@@ -97,7 +97,7 @@ export default async function Page(props: {
   const canExportCsv = PLAN_CONFIG[planId].canExportCsv;
 
   return (
-    <main>
+    <main className="min-w-0">
       <RevealOnMount>
         <DashboardPageTitle title="Invoices" className="mb-3" />
 
@@ -139,7 +139,7 @@ export default async function Page(props: {
       )}
 
       <RevealOnMount delay={0.12}>
-        <div>
+        <div className="min-w-0">
           <InvoicesUpdatedToast
             visible={isUpdated}
             invoiceId={updatedInvoiceId}

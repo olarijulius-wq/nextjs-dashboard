@@ -9,7 +9,7 @@ import { formatDateToLocal, formatCurrencySuffix } from '@/app/lib/utils';
 import type { InvoicesTable as InvoicesTableType } from '@/app/lib/definitions';
 import { DARK_PILL, DARK_SURFACE_SUBTLE } from '@/app/ui/theme/tokens';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import SendInvoiceButton from '@/app/ui/invoices/send-invoice-button';
 
@@ -30,6 +30,7 @@ export default function InvoicesTable({
     Record<string, { status: string | null; sentAt: string | null }>
   >({});
   const [lastSentInvoiceId, setLastSentInvoiceId] = useState<string | null>(null);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
 
   const lastSentInvoice = useMemo(
     () => invoices.find((invoice) => invoice.id === lastSentInvoiceId) ?? null,
@@ -71,14 +72,60 @@ export default function InvoicesTable({
     setLastSentInvoiceId(input.invoiceId);
   }
 
+  function stopRowNavigation(event: SyntheticEvent) {
+    // Keep action controls usable without triggering row navigation.
+    event.stopPropagation();
+  }
+
+  function isFromInteractiveElement(target: EventTarget | null) {
+    return target instanceof Element
+      ? !!target.closest(
+          'a,button,input,select,textarea,label,summary,[role="button"],[data-row-nav-stop]',
+        )
+      : false;
+  }
+
+  function hasSelectionText() {
+    return (window.getSelection()?.toString().trim().length ?? 0) > 0;
+  }
+
+  function navigateToInvoice(invoiceId: string) {
+    router.push(`/dashboard/invoices/${invoiceId}?returnTo=${encodeURIComponent(returnToPath)}`);
+  }
+
+  function onRowPointerDown(event: PointerEvent<HTMLElement>) {
+    pointerDownRef.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function onRowClick(event: MouseEvent<HTMLElement>, invoiceId: string) {
+    if (isFromInteractiveElement(event.target) || hasSelectionText()) return;
+
+    const start = pointerDownRef.current;
+    if (start) {
+      const movedX = Math.abs(event.clientX - start.x);
+      const movedY = Math.abs(event.clientY - start.y);
+      if (movedX > 6 || movedY > 6) return;
+    }
+
+    navigateToInvoice(invoiceId);
+  }
+
+  function onRowKeyDown(event: KeyboardEvent<HTMLElement>, invoiceId: string) {
+    if (isFromInteractiveElement(event.target)) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    navigateToInvoice(invoiceId);
+  }
+
   return (
-    <div className="mt-6 flow-root">
+    <div className="mt-6 min-w-0 flow-root">
       {lastSentInvoice ? (
         <div className="mb-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
           Sent invoice {lastSentInvoice.invoice_number ?? `#${lastSentInvoice.id.slice(0, 8)}`}.
         </div>
       ) : null}
-      <div className="overflow-x-auto overflow-y-visible">
+      {/* Keep horizontal scrolling scoped to this container, never the dashboard/page root. */}
+      <div className="min-w-0 overflow-x-auto overflow-y-visible">
         <div className="inline-block min-w-full align-middle">
           <div className={`overflow-hidden rounded-2xl border border-neutral-200 bg-white p-2 shadow-[0_12px_24px_rgba(15,23,42,0.06)] md:pt-0 ${DARK_SURFACE_SUBTLE} dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]`}>
           <div className="md:hidden">
@@ -87,7 +134,12 @@ export default function InvoicesTable({
               return (
                 <div
                   key={invoice.id}
-                  className={`mb-2 w-full rounded-xl border border-neutral-200 bg-white p-4 transition duration-300 ${DARK_SURFACE_SUBTLE} ${
+                  role="link"
+                  tabIndex={0}
+                  onPointerDown={onRowPointerDown}
+                  onClick={(event) => onRowClick(event, invoice.id)}
+                  onKeyDown={(event) => onRowKeyDown(event, invoice.id)}
+                  className={`mb-2 w-full cursor-pointer rounded-xl border border-neutral-200 bg-white p-4 transition duration-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 dark:hover:bg-zinc-950 dark:focus-visible:ring-zinc-700 ${DARK_SURFACE_SUBTLE} ${
                     isHighlighted
                       ? 'ring-2 ring-emerald-300/80 bg-emerald-50/60 dark:ring-emerald-500/60 dark:bg-emerald-500/10'
                       : ''
@@ -130,6 +182,7 @@ export default function InvoicesTable({
                       </p>
                       <Link
                         href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(returnToPath)}`}
+                        onClick={stopRowNavigation}
                         className="truncate text-xs text-slate-600 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-300"
                       >
                         {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
@@ -142,7 +195,11 @@ export default function InvoicesTable({
                         {invoice.due_date ? formatDateToLocal(invoice.due_date) : '—'}
                       </p>
                     </div>
-                    <div className="flex shrink-0 justify-end gap-2">
+                    <div
+                      className="flex shrink-0 justify-end gap-2"
+                      onClickCapture={stopRowNavigation}
+                      onKeyDownCapture={stopRowNavigation}
+                    >
                       <SendInvoiceButton
                         invoiceId={invoice.id}
                         compact
@@ -178,7 +235,7 @@ export default function InvoicesTable({
               );
             })}
           </div>
-            <table className="hidden min-w-full text-slate-900 dark:text-zinc-100 md:table">
+            <table className="hidden w-full min-w-[900px] text-slate-900 dark:text-zinc-100 md:table">
             <thead className="sticky top-0 z-10 rounded-lg border-b border-neutral-200 bg-white text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:border-zinc-800 dark:bg-black dark:text-zinc-100">
               <tr>
                 <th scope="col" className="px-4 py-5 font-medium sm:pl-6">
@@ -211,7 +268,12 @@ export default function InvoicesTable({
                 return (
                   <tr
                     key={invoice.id}
-                    className={`w-full transition hover:bg-slate-50 dark:hover:bg-zinc-950 last-of-type:border-none [&:first-child>td:first-child]:rounded-tl-xl [&:first-child>td:last-child]:rounded-tr-xl [&:last-child>td:first-child]:rounded-bl-xl [&:last-child>td:last-child]:rounded-br-xl ${
+                    role="link"
+                    tabIndex={0}
+                    onPointerDown={onRowPointerDown}
+                    onClick={(event) => onRowClick(event, invoice.id)}
+                    onKeyDown={(event) => onRowKeyDown(event, invoice.id)}
+                    className={`w-full cursor-pointer transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-300 dark:hover:bg-zinc-950 dark:focus-visible:ring-zinc-700 last-of-type:border-none [&:first-child>td:first-child]:rounded-tl-xl [&:first-child>td:last-child]:rounded-tr-xl [&:last-child>td:first-child]:rounded-bl-xl [&:last-child>td:last-child]:rounded-br-xl ${
                       isHighlighted
                         ? 'bg-emerald-50/70 ring-2 ring-inset ring-emerald-300/80 dark:bg-emerald-500/10 dark:ring-emerald-500/60'
                         : ''
@@ -226,6 +288,7 @@ export default function InvoicesTable({
                           <p>{invoice.name}</p>
                           <Link
                             href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(returnToPath)}`}
+                            onClick={stopRowNavigation}
                             className="text-xs text-slate-600 hover:text-slate-700 dark:text-zinc-200 dark:hover:text-zinc-300"
                           >
                             {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
@@ -263,7 +326,11 @@ export default function InvoicesTable({
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-5 text-center">
-                      <div className="flex justify-center gap-3">
+                      <div
+                        className="flex justify-center gap-3"
+                        onClickCapture={stopRowNavigation}
+                        onKeyDownCapture={stopRowNavigation}
+                      >
                         <SendInvoiceButton
                           invoiceId={invoice.id}
                           compact

@@ -77,7 +77,7 @@ export default function MobileDrawer({
         )}
         aria-hidden={!open}
       >
-        <div className="flex h-full flex-col overflow-y-auto px-5 pb-8 pt-5">
+        <div className="relative flex h-full flex-col overflow-y-auto px-5 pb-28 pt-5">
           <div className="flex items-center justify-start">
             <Link
               href="/"
@@ -122,62 +122,62 @@ export default function MobileDrawer({
             </nav>
           </div>
 
-          <div className="my-8 border-t border-neutral-200 dark:border-neutral-800" />
-
-          <div className="space-y-1">
-            <p className="text-xs uppercase tracking-[0.2em] text-neutral-500 dark:text-neutral-500">Account</p>
-            {userEmail ? (
-              <p className="truncate py-2 text-sm text-slate-600 dark:text-neutral-400">{userEmail}</p>
-            ) : null}
-            <div className="space-y-1">
-              <Link
-                href="/dashboard/profile"
-                onClick={() => onOpenChange(false)}
-                className={accountMenuItemClasses}
-              >
-                <UserCircleIcon className="h-5 w-5" />
-                My profile
-              </Link>
-              <Link
-                href="/dashboard/settings"
-                onClick={() => onOpenChange(false)}
-                className={accountMenuItemClasses}
-              >
-                <Cog6ToothIcon className="h-5 w-5" />
-                Settings
-              </Link>
-              <ThemeToggleMenuItem
-                staticLabel="Toggle theme"
-                className="px-2 py-2 text-base"
-              />
-              <Link
-                href="/"
-                onClick={() => onOpenChange(false)}
-                className={accountMenuItemClasses}
-              >
-                <HomeIcon className="h-5 w-5" />
-                Homepage
-              </Link>
-              <Link
-                href="/dashboard/onboarding"
-                onClick={() => onOpenChange(false)}
-                className={accountMenuItemClasses}
-              >
-                <UserCircleIcon className="h-5 w-5" />
-                Onboarding
-              </Link>
-              <form
-                action={logoutAction}
-                onSubmit={() => onOpenChange(false)}
-              >
-                <button
-                  type="submit"
-                  className={`w-full text-left ${accountMenuItemClasses}`}
+          <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10">
+            <div className="pointer-events-auto rounded-xl border border-neutral-200 bg-white/95 p-3 shadow-xl backdrop-blur dark:border-neutral-800 dark:bg-black/95">
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-500 dark:text-neutral-500">Account</p>
+              {userEmail ? (
+                <p className="truncate py-2 text-sm text-slate-600 dark:text-neutral-400">{userEmail}</p>
+              ) : null}
+              <div className="space-y-1">
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => onOpenChange(false)}
+                  className={accountMenuItemClasses}
                 >
-                  <PowerIcon className="h-5 w-5" />
-                  Log out
-                </button>
-              </form>
+                  <UserCircleIcon className="h-5 w-5" />
+                  My profile
+                </Link>
+                <Link
+                  href="/dashboard/settings"
+                  onClick={() => onOpenChange(false)}
+                  className={accountMenuItemClasses}
+                >
+                  <Cog6ToothIcon className="h-5 w-5" />
+                  Settings
+                </Link>
+                <ThemeToggleMenuItem
+                  staticLabel="Toggle theme"
+                  className="px-2 py-2 text-base"
+                />
+                <Link
+                  href="/"
+                  onClick={() => onOpenChange(false)}
+                  className={accountMenuItemClasses}
+                >
+                  <HomeIcon className="h-5 w-5" />
+                  Homepage
+                </Link>
+                <Link
+                  href="/dashboard/onboarding"
+                  onClick={() => onOpenChange(false)}
+                  className={accountMenuItemClasses}
+                >
+                  <UserCircleIcon className="h-5 w-5" />
+                  Onboarding
+                </Link>
+                <form
+                  action={logoutAction}
+                  onSubmit={() => onOpenChange(false)}
+                >
+                  <button
+                    type="submit"
+                    className={`w-full text-left ${accountMenuItemClasses}`}
+                  >
+                    <PowerIcon className="h-5 w-5" />
+                    Log out
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </div>

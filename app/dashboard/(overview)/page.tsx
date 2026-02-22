@@ -83,14 +83,20 @@ export default async function Page(props: {
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="grid gap-6 sm:grid-cols-2">
-          <Suspense fallback={<CardsSkeleton />}>
+          <Suspense
+            fallback={
+              <div className="contents [&>*]:min-h-[150px]">
+                <CardsSkeleton />
+              </div>
+            }
+          >
             <CardWrapper />
           </Suspense>
         </div>
 
         <Suspense
           fallback={
-            <div className="h-full rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]" />
+            <div className="h-full min-h-[236px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]" />
           }
         >
           <LatelessLiveView />
@@ -99,19 +105,37 @@ export default async function Page(props: {
 
       <div className="space-y-6">
         <RevealOnMount delay={0.08}>
-          <Suspense fallback={<RevenueChartSkeleton />}>
+          <Suspense
+            fallback={
+              <div className="min-h-[500px]">
+                <RevenueChartSkeleton />
+              </div>
+            }
+          >
             <RevenueChart />
           </Suspense>
         </RevealOnMount>
 
         <div className="grid gap-6 md:grid-cols-2">
           <RevealOnMount delay={0.14} className="h-full">
-            <Suspense fallback={<LatestInvoicesSkeleton />}>
+            <Suspense
+              fallback={
+                <div className="h-full min-h-[420px]">
+                  <LatestInvoicesSkeleton />
+                </div>
+              }
+            >
               <LatestInvoices />
             </Suspense>
           </RevealOnMount>
           <RevealOnMount delay={0.2} className="h-full">
-            <Suspense fallback={<LatestInvoicesSkeleton />}>
+            <Suspense
+              fallback={
+                <div className="h-full min-h-[420px]">
+                  <LatestInvoicesSkeleton />
+                </div>
+              }
+            >
               <LatePayers searchParams={searchParams} />
             </Suspense>
           </RevealOnMount>

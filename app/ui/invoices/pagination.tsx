@@ -1,10 +1,10 @@
 'use client';
 
-import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
 import clsx from 'clsx';
-import Link from 'next/link';
 import { generatePagination } from '@/app/lib/utils';
-import { usePathname, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { DARK_PAGINATION_BTN } from '@/app/ui/theme/tokens';
 
 export default function Pagination({
@@ -15,28 +15,45 @@ export default function Pagination({
   pageParam?: string;
 }) {
   // NOTE: Uncomment this code in Chapter 10
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentPage = Number(searchParams.get(pageParam)) || 1;
-  const allPages = generatePagination(currentPage, totalPages);
+  const safeTotalPages = Math.max(1, totalPages);
+  const rawPage = Number(searchParams.get(pageParam)) || 1;
+  const currentPage = Math.min(Math.max(rawPage, 1), safeTotalPages);
+  const allPages = generatePagination(currentPage, safeTotalPages);
+  const hasPrev = currentPage > 1;
+  const hasNext = currentPage < safeTotalPages;
 
   const createPageURL = (pageNumber: number | string) => {
     const params = new URLSearchParams(searchParams);
     params.set(pageParam, pageNumber.toString());
     return `${pathname}?${params.toString()}`;
   };
-  
+  if (safeTotalPages <= 1) {
+    return (
+      <div className="inline-flex">
+        <PaginationNumber
+          href={createPageURL(1)}
+          page={1}
+          position="single"
+          isActive={true}
+        />
+      </div>
+    );
+  }
 
   return (
     <>
       {/*  NOTE: Uncomment this code in Chapter 10 */}
 
       <div className="inline-flex">
-        <PaginationArrow
-          direction="left"
-          href={createPageURL(currentPage - 1)}
-          isDisabled={currentPage <= 1}
-        />
+        {hasPrev ? (
+          <PaginationArrow
+            direction="left"
+            onNavigate={() => router.push(createPageURL(currentPage - 1))}
+          />
+        ) : null}
 
         <div className="flex -space-x-px">
           {allPages.map((page, index) => {
@@ -59,11 +76,12 @@ export default function Pagination({
           })}
         </div>
 
-        <PaginationArrow
-          direction="right"
-          href={createPageURL(currentPage + 1)}
-          isDisabled={currentPage >= totalPages}
-        />
+        {hasNext ? (
+          <PaginationArrow
+            direction="right"
+            onNavigate={() => router.push(createPageURL(currentPage + 1))}
+          />
+        ) : null}
       </div>
     </>
   );
@@ -102,18 +120,18 @@ function PaginationNumber({
 }
 
 function PaginationArrow({
-  href,
+  onNavigate,
   direction,
   isDisabled,
 }: {
-  href: string;
+  onNavigate: () => void;
   direction: 'left' | 'right';
   isDisabled?: boolean;
 }) {
   const className = clsx(
     `flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-900 bg-neutral-900 text-white transition duration-200 ease-out ${DARK_PAGINATION_BTN}`,
     {
-      'pointer-events-none border-neutral-300 bg-white text-neutral-400 dark:border-zinc-800 dark:bg-black dark:text-zinc-600': isDisabled,
+      'border-neutral-300 bg-white text-neutral-400 opacity-60 dark:border-zinc-800 dark:bg-black dark:text-zinc-500': isDisabled,
       'hover:border-black hover:bg-black/90 hover:scale-[1.01]': !isDisabled,
       'mr-2 md:mr-4': direction === 'left',
       'ml-2 md:ml-4': direction === 'right',
@@ -122,16 +140,22 @@ function PaginationArrow({
 
   const icon =
     direction === 'left' ? (
-      <ArrowLeftIcon className="w-4" />
+      <ChevronLeftIcon className="h-4 w-4" />
     ) : (
-      <ArrowRightIcon className="w-4" />
+      <ChevronRightIcon className="h-4 w-4" />
     );
 
-  return isDisabled ? (
-    <div className={className}>{icon}</div>
-  ) : (
-    <Link className={className} href={href}>
+  return (
+    <button
+      type="button"
+      onClick={onNavigate}
+      disabled={isDisabled}
+      aria-disabled={isDisabled}
+      aria-label={direction === 'left' ? 'Go to previous page' : 'Go to next page'}
+      title={direction === 'left' ? 'Previous page' : 'Next page'}
+      className={className}
+    >
       {icon}
-    </Link>
+    </button>
   );
 }

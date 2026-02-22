@@ -235,20 +235,21 @@ export default async function Page(props: {
                           </p>
                           <Link
                             href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(customerReturnToPath)}`}
-                            className={`${toolbarButtonClasses} h-8 w-8 px-0 text-xs`}
+                            className={`${toolbarButtonClasses} inline-flex h-8 items-center gap-2 px-2.5 text-sm`}
                             aria-label={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                             title={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                           >
                             <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                            <span>Open</span>
                           </Link>
                         </div>
                       </article>
                     ))}
                   </div>
 
-                  <div className="hidden w-full md:block">
+                  <div className="hidden w-full overflow-hidden rounded-xl border border-neutral-200 bg-white md:block dark:border-neutral-900 dark:bg-black">
                     <table className="w-full table-fixed text-left">
-                      <thead className="bg-black text-xs font-semibold uppercase tracking-[0.12em] text-white dark:bg-black dark:text-zinc-100">
+                      <thead className="border-b border-neutral-200 bg-white text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:border-zinc-800 dark:bg-black dark:text-zinc-100">
                         <tr>
                           <th scope="col" className="px-4 py-4 font-medium">
                             Invoice
@@ -265,7 +266,7 @@ export default async function Page(props: {
                           <th scope="col" className="px-3 py-4 font-medium text-right w-24 md:w-28">
                             Amount
                           </th>
-                          <th scope="col" className="px-3 py-4 font-medium text-right w-[1%] md:w-20">
+                          <th scope="col" className="px-3 py-4 font-medium text-right w-24 md:w-28">
                             Action
                           </th>
                         </tr>
@@ -299,15 +300,15 @@ export default async function Page(props: {
                             <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
                               {formatCurrency(invoice.amount)}
                             </td>
-                            <td className="w-[1%] whitespace-nowrap px-3 py-3 text-right">
+                            <td className="whitespace-nowrap px-3 py-3 text-right">
                               <Link
                                 href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(customerReturnToPath)}`}
-                                className={`${toolbarButtonClasses} inline-flex h-8 w-8 items-center justify-center px-0 text-xs lg:w-auto lg:px-2.5`}
+                                className={`${toolbarButtonClasses} inline-flex h-8 shrink-0 items-center justify-center gap-2 px-2.5 text-sm`}
                                 aria-label={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                                 title={`Open invoice ${invoice.invoice_number || `#${invoice.id.slice(0, 8)}`}`}
                               >
                                 <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                                <span className="hidden lg:inline">Open</span>
+                                <span>Open</span>
                               </Link>
                             </td>
                           </tr>

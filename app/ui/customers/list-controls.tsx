@@ -68,7 +68,7 @@ export default function CustomersListControls({
     <div
       className={clsx(
         listControlsPanelClasses,
-        'md:flex-row md:items-center md:justify-end',
+        'md:flex-row md:items-center md:justify-start',
       )}
     >
       <div className={listControlsRowClasses}>
