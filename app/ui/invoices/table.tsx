@@ -145,8 +145,15 @@ export default function InvoicesTable({
                       : ''
                   }`}
                 >
-                  <div className="flex items-start gap-3 border-b border-neutral-200 pb-4 dark:border-zinc-900">
+                  <div className="flex items-start justify-between gap-3 border-b border-neutral-200 pb-4 dark:border-zinc-900">
                     <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(returnToPath)}`}
+                        onClick={stopRowNavigation}
+                        className="mb-2 block truncate text-xs text-slate-600 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+                      >
+                        {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
+                      </Link>
                       <div className="mb-2 flex items-center">
                         <div className="mr-2 flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-semibold text-white dark:bg-black dark:text-zinc-100 dark:border dark:border-zinc-800">
                           {invoice.name.charAt(0).toUpperCase()}
@@ -159,34 +166,68 @@ export default function InvoicesTable({
                         {invoice.email}
                       </p>
                     </div>
-                    <div className="min-w-0 flex flex-col items-end">
-                      <InvoiceStatus status={invoice.status} />
-                      {invoice.status === 'pending' && invoice.days_overdue > 0 && (
-                        <span className={`mt-1 inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs text-amber-800 ${DARK_PILL}`}>
-                          Overdue by {invoice.days_overdue} day
-                          {invoice.days_overdue === 1 ? '' : 's'}
-                        </span>
-                      )}
-                      {invoice.last_email_status ? (
-                        <p className="mt-1 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500 dark:text-zinc-400">
-                          Email: {invoice.last_email_status}
-                          {invoice.last_email_sent_at ? ` · ${formatDateToLocal(invoice.last_email_sent_at)}` : ''}
-                        </p>
-                      ) : null}
+                    <div className="shrink-0 pl-2">
+                      <div
+                        className="flex flex-col items-end text-right leading-tight"
+                        onClickCapture={stopRowNavigation}
+                        onKeyDownCapture={stopRowNavigation}
+                      >
+                        <InvoiceStatus status={invoice.status} />
+                        {invoice.status === 'pending' && invoice.days_overdue > 0 && (
+                          <span className={`mt-1 inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs text-amber-800 ${DARK_PILL}`}>
+                            Overdue by {invoice.days_overdue} day
+                            {invoice.days_overdue === 1 ? '' : 's'}
+                          </span>
+                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <SendInvoiceButton
+                            invoiceId={invoice.id}
+                            compact
+                            returnTo={returnToPath}
+                            onSent={handleInvoiceSent}
+                            initialStatus={
+                              sendStateByInvoiceId[invoice.id]?.status ?? invoice.last_email_status
+                            }
+                            initialSentAt={
+                              sendStateByInvoiceId[invoice.id]?.sentAt ?? invoice.last_email_sent_at
+                            }
+                            initialError={invoice.last_email_error}
+                          />
+                          {canPayInvoiceStatus(invoice.status) &&
+                            (hasStripeConnect ? (
+                              <PayInvoiceButton
+                                invoiceId={invoice.id}
+                                className="rounded-md px-2 py-1 text-xs whitespace-nowrap"
+                              />
+                            ) : (
+                              <Link
+                                href="/dashboard/settings/payouts"
+                                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                              >
+                                Connect Stripe
+                              </Link>
+                            ))}
+                        </div>
+                        {invoice.last_email_status ? (
+                          <div className="mt-1 max-w-[220px]">
+                            <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500 dark:text-zinc-400">
+                              Email: {invoice.last_email_status}
+                            </p>
+                            {invoice.last_email_sent_at ? (
+                              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                                {formatDateToLocal(invoice.last_email_sent_at)}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex w-full items-start gap-3 pt-4">
+                  <div className="flex items-start justify-between gap-3 pt-4">
                     <div className="min-w-0 flex-1">
                       <p className="text-base font-semibold text-slate-900 dark:text-zinc-100">
                         {formatCurrencySuffix(invoice.amount)}
                       </p>
-                      <Link
-                        href={`/dashboard/invoices/${invoice.id}?returnTo=${encodeURIComponent(returnToPath)}`}
-                        onClick={stopRowNavigation}
-                        className="truncate text-xs text-slate-600 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-300"
-                      >
-                        {invoice.invoice_number ?? `#${invoice.id.slice(0, 8)}`}
-                      </Link>
                       <p className="text-xs text-slate-600 dark:text-zinc-400">
                         {formatDateToLocal(invoice.date)}
                       </p>
@@ -200,35 +241,6 @@ export default function InvoicesTable({
                       onClickCapture={stopRowNavigation}
                       onKeyDownCapture={stopRowNavigation}
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        <SendInvoiceButton
-                          invoiceId={invoice.id}
-                          compact
-                          returnTo={returnToPath}
-                          onSent={handleInvoiceSent}
-                          initialStatus={
-                            sendStateByInvoiceId[invoice.id]?.status ?? invoice.last_email_status
-                          }
-                          initialSentAt={
-                            sendStateByInvoiceId[invoice.id]?.sentAt ?? invoice.last_email_sent_at
-                          }
-                          initialError={invoice.last_email_error}
-                        />
-                        {canPayInvoiceStatus(invoice.status) &&
-                          (hasStripeConnect ? (
-                            <PayInvoiceButton
-                              invoiceId={invoice.id}
-                              className="rounded-md px-2 py-1 text-xs"
-                            />
-                          ) : (
-                            <Link
-                              href="/dashboard/settings/payouts"
-                              className="inline-flex items-center justify-center rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                            >
-                              Connect Stripe
-                            </Link>
-                          ))}
-                      </div>
                       <div className="flex items-center justify-end gap-2">
                         <UpdateInvoice id={invoice.id} returnTo={returnToPath} />
                         <DeleteInvoice id={invoice.id} />
