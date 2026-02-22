@@ -145,8 +145,8 @@ export default function InvoicesTable({
                       : ''
                   }`}
                 >
-                  <div className="flex items-center justify-between border-b border-neutral-200 pb-4 dark:border-zinc-900">
-                    <div className="min-w-0">
+                  <div className="flex items-start gap-3 border-b border-neutral-200 pb-4 dark:border-zinc-900">
+                    <div className="min-w-0 flex-1">
                       <div className="mb-2 flex items-center">
                         <div className="mr-2 flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-semibold text-white dark:bg-black dark:text-zinc-100 dark:border dark:border-zinc-800">
                           {invoice.name.charAt(0).toUpperCase()}
@@ -159,7 +159,7 @@ export default function InvoicesTable({
                         {invoice.email}
                       </p>
                     </div>
-                    <div className="flex flex-col items-end">
+                    <div className="min-w-0 flex flex-col items-end">
                       <InvoiceStatus status={invoice.status} />
                       {invoice.status === 'pending' && invoice.days_overdue > 0 && (
                         <span className={`mt-1 inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs text-amber-800 ${DARK_PILL}`}>
@@ -168,15 +168,15 @@ export default function InvoicesTable({
                         </span>
                       )}
                       {invoice.last_email_status ? (
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                        <p className="mt-1 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500 dark:text-zinc-400">
                           Email: {invoice.last_email_status}
                           {invoice.last_email_sent_at ? ` · ${formatDateToLocal(invoice.last_email_sent_at)}` : ''}
                         </p>
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex w-full items-center justify-between pt-4">
-                    <div>
+                  <div className="flex w-full items-start gap-3 pt-4">
+                    <div className="min-w-0 flex-1">
                       <p className="text-base font-semibold text-slate-900 dark:text-zinc-100">
                         {formatCurrencySuffix(invoice.amount)}
                       </p>
@@ -196,7 +196,7 @@ export default function InvoicesTable({
                       </p>
                     </div>
                     <div
-                      className="flex shrink-0 flex-col items-end gap-2"
+                      className="flex shrink-0 flex-col items-end gap-2 pl-2"
                       onClickCapture={stopRowNavigation}
                       onKeyDownCapture={stopRowNavigation}
                     >
