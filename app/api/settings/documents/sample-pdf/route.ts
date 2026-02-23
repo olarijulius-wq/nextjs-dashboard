@@ -16,6 +16,14 @@ import {
 } from '@/app/lib/workspaces';
 
 const PDFDocument = require('pdfkit/js/pdfkit.standalone') as typeof PDFDocumentType;
+const LOGO_MAX_W = 160;
+const LOGO_MAX_H = 48;
+const HEADER_MIN_H = 72;
+const HEADER_TOP_Y = 45;
+const HEADER_TOP_PADDING = 12;
+const HEADER_BOTTOM_PADDING = 12;
+const HEADER_TEXT_GAP = 10;
+const CONTENT_TOP_GAP = 12;
 
 const migrationMessage =
   'Documents requires DB migrations 007_add_workspaces_and_team.sql and 010_add_documents_settings.sql. Run migrations and retry.';
@@ -53,9 +61,12 @@ async function buildSamplePdf(input: {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const logoX = 50;
-    const logoY = 45;
-    const logoFit: [number, number] = [160, 80];
+    const leftMargin = doc.page.margins.left;
+    const rightMargin = doc.page.margins.right;
+    const contentWidth = doc.page.width - leftMargin - rightMargin;
+    const logoX = leftMargin;
+    const logoY = HEADER_TOP_Y + HEADER_TOP_PADDING;
+    let logoDrawH = 0;
 
     if (input.logoDataUrl) {
       const logoBuffer = dataUrlToBuffer(input.logoDataUrl);
@@ -68,16 +79,45 @@ async function buildSamplePdf(input: {
             logoBuffer.byteOffset,
             logoBuffer.byteOffset + logoBuffer.byteLength,
           );
-          doc.image(logoArrayBuffer, logoX, logoY, { fit: logoFit });
+          const image = doc.openImage(logoArrayBuffer);
+          const sourceW = image.width;
+          const sourceH = image.height;
+          const scale = Math.min(LOGO_MAX_W / sourceW, LOGO_MAX_H / sourceH, 1);
+          const logoDrawW = Math.max(1, Math.round(sourceW * scale));
+          logoDrawH = Math.max(1, Math.round(sourceH * scale));
+          doc.image(logoArrayBuffer, logoX, logoY, {
+            width: logoDrawW,
+            height: logoDrawH,
+          });
         } catch (err) {
           console.error('[pdf-logo-error]', err);
         }
       }
     }
 
-    doc.fontSize(24).text(input.companyName || 'Sample Company', 50, 120);
-    doc.fontSize(14).text('Sample Invoice', 50, 150);
-    doc.moveDown();
+    const headerHeight = Math.max(
+      HEADER_MIN_H,
+      logoDrawH + HEADER_TOP_PADDING + HEADER_BOTTOM_PADDING,
+    );
+    const headerTextX = leftMargin + LOGO_MAX_W + HEADER_TEXT_GAP;
+    const headerTextWidth = Math.max(120, contentWidth - LOGO_MAX_W - HEADER_TEXT_GAP);
+    const headerTextY = HEADER_TOP_Y + HEADER_TOP_PADDING;
+    const contentStartY = HEADER_TOP_Y + headerHeight + CONTENT_TOP_GAP;
+
+    doc
+      .fontSize(24)
+      .text(input.companyName || 'Sample Company', headerTextX, headerTextY, {
+        width: headerTextWidth,
+        lineBreak: false,
+      });
+    doc
+      .fontSize(14)
+      .text('Sample Invoice', headerTextX, headerTextY + 30, {
+        width: headerTextWidth,
+        lineBreak: false,
+      });
+
+    doc.y = contentStartY;
 
     doc
       .fontSize(12)

@@ -101,7 +101,7 @@ export default async function Page(props: {
               days they delay payments.
             </p>
             <Link
-              href="/dashboard/settings"
+              href="/dashboard/settings/billing"
               className={`${toolbarButtonClasses} mt-4 h-9 px-3 text-xs`}
             >
               View plans

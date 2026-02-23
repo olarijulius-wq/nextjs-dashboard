@@ -37,10 +37,10 @@ export default async function LatePayers({
   const currentPage = Number(searchParams?.lpPage) > 0 ? Number(searchParams?.lpPage) : 1;
   const sortKey: LatePayerSortKey =
     searchParams?.lpSort === 'days_overdue' ||
-    searchParams?.lpSort === 'paid_invoices' ||
-    searchParams?.lpSort === 'name' ||
-    searchParams?.lpSort === 'email' ||
-    searchParams?.lpSort === 'amount'
+      searchParams?.lpSort === 'paid_invoices' ||
+      searchParams?.lpSort === 'name' ||
+      searchParams?.lpSort === 'email' ||
+      searchParams?.lpSort === 'amount'
       ? searchParams.lpSort
       : 'days_overdue';
   const sortDir: LatePayerSortDir =
@@ -49,17 +49,17 @@ export default async function LatePayers({
       : 'desc';
   const pageSize =
     searchParams?.lpPageSize === '25' ||
-    searchParams?.lpPageSize === '50' ||
-    searchParams?.lpPageSize === '100' ||
-    searchParams?.lpPageSize === '200'
+      searchParams?.lpPageSize === '50' ||
+      searchParams?.lpPageSize === '100' ||
+      searchParams?.lpPageSize === '200'
       ? Number(searchParams.lpPageSize)
       : 100;
 
   const [latePayers, totalPages] = canView
     ? await Promise.all([
-        fetchLatePayerStats(currentPage, pageSize, sortKey, sortDir, query),
-        fetchLatePayerPages(query, pageSize),
-      ])
+      fetchLatePayerStats(currentPage, pageSize, sortKey, sortDir, query),
+      fetchLatePayerPages(query, pageSize),
+    ])
     : [[], 0];
 
   const isEmpty = !latePayers || latePayers.length === 0;
@@ -114,7 +114,7 @@ export default async function LatePayers({
               Available on Solo, Pro, and Studio.
             </p>
             <Link
-              href="/dashboard/settings"
+              href="/dashboard/settings/billing"
               className={`${toolbarButtonClasses} mt-4 h-9 px-3 text-xs`}
             >
               View plans

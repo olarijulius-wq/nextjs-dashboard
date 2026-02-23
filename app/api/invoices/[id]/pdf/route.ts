@@ -16,6 +16,14 @@ import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 
 import type PDFDocumentType from 'pdfkit';
 const PDFDocument = require('pdfkit/js/pdfkit.standalone') as typeof PDFDocumentType;
+const LOGO_MAX_W = 160;
+const LOGO_MAX_H = 48;
+const HEADER_MIN_H = 72;
+const HEADER_TOP_Y = 45;
+const HEADER_TOP_PADDING = 12;
+const HEADER_BOTTOM_PADDING = 12;
+const HEADER_TEXT_GAP = 10;
+const CONTENT_TOP_GAP = 12;
 
 function formatAmountForPdf(amountCents: number) {
   const value = amountCents / 100;
@@ -63,9 +71,12 @@ async function buildInvoicePdf(input: {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const logoX = 50;
-    const logoY = 45;
-    const logoFit: [number, number] = [160, 80];
+    const leftMargin = doc.page.margins.left;
+    const rightMargin = doc.page.margins.right;
+    const contentWidth = doc.page.width - leftMargin - rightMargin;
+    const logoX = leftMargin;
+    const logoY = HEADER_TOP_Y + HEADER_TOP_PADDING;
+    let logoDrawH = 0;
 
     if (input.company.logoDataUrl) {
       const logoBuffer = dataUrlToBuffer(input.company.logoDataUrl);
@@ -78,7 +89,16 @@ async function buildInvoicePdf(input: {
             logoBuffer.byteOffset,
             logoBuffer.byteOffset + logoBuffer.byteLength,
           );
-          doc.image(logoArrayBuffer, logoX, logoY, { fit: logoFit });
+          const image = doc.openImage(logoArrayBuffer);
+          const sourceW = image.width;
+          const sourceH = image.height;
+          const scale = Math.min(LOGO_MAX_W / sourceW, LOGO_MAX_H / sourceH, 1);
+          const logoDrawW = Math.max(1, Math.round(sourceW * scale));
+          logoDrawH = Math.max(1, Math.round(sourceH * scale));
+          doc.image(logoArrayBuffer, logoX, logoY, {
+            width: logoDrawW,
+            height: logoDrawH,
+          });
         } catch (err) {
           console.error('[pdf-logo-error]', err);
         }
@@ -86,10 +106,30 @@ async function buildInvoicePdf(input: {
     }
 
     const invoiceLabel = input.invoice.invoice_number ?? input.invoice.id.slice(0, 8);
-    doc.fontSize(22).text(input.company.companyName || 'Lateless', 50, 120);
-    doc.fontSize(14).text(`Invoice ${invoiceLabel}`, 50, 150);
+    const headerHeight = Math.max(
+      HEADER_MIN_H,
+      logoDrawH + HEADER_TOP_PADDING + HEADER_BOTTOM_PADDING,
+    );
+    const headerTextX = leftMargin + LOGO_MAX_W + HEADER_TEXT_GAP;
+    const headerTextWidth = Math.max(120, contentWidth - LOGO_MAX_W - HEADER_TEXT_GAP);
+    const headerTextY = HEADER_TOP_Y + HEADER_TOP_PADDING;
+    const contentStartY = HEADER_TOP_Y + headerHeight + CONTENT_TOP_GAP;
 
-    doc.moveDown(2);
+    doc
+      .fontSize(22)
+      .text(input.company.companyName || 'Lateless', headerTextX, headerTextY, {
+        width: headerTextWidth,
+        lineBreak: false,
+      });
+    doc
+      .fontSize(14)
+      .text(`Invoice ${invoiceLabel}`, headerTextX, headerTextY + 28, {
+        width: headerTextWidth,
+        lineBreak: false,
+      });
+
+    doc.y = contentStartY;
+    doc.moveDown(0.5);
     doc.fontSize(12).text('From');
     if (input.company.address) doc.text(input.company.address);
     if (input.company.vatOrRegNumber) doc.text(`VAT/Reg: ${input.company.vatOrRegNumber}`);
