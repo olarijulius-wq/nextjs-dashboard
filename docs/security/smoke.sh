@@ -37,19 +37,19 @@ run_check() {
 
 run_check \
   "400 INVALID_REQUEST_BODY on strict JSON" \
-  "curl -sS -i -X POST \"$BASE/api/stripe/reconcile\" -H 'Cookie: $SESSION' -H 'Origin: $BASE' -H 'Content-Type: application/json' --data '{\"unknown\":true}'" \
+  "curl -sS -i -X POST \"$BASE/api/stripe/reconcile\" -H \"Cookie: $SESSION\" -H \"Origin: $BASE\" -H 'Content-Type: application/json' --data '{\"unknown\":true}'" \
   "400" \
   "INVALID_REQUEST_BODY"
 
 run_check \
   "400 INVALID_QUERY on strict query" \
-  "curl -sS -i -X POST \"$BASE/api/stripe/connect/onboard?reconnect=1&unknown=1\" -H 'Cookie: $SESSION' -H 'Origin: $BASE'" \
+  "curl -sS -i -X POST \"$BASE/api/stripe/connect/onboard?reconnect=1&unknown=1\" -H \"Cookie: $SESSION\" -H \"Origin: $BASE\"" \
   "400" \
   "INVALID_QUERY"
 
 run_check \
   "403 CSRF_ORIGIN_MISMATCH" \
-  "curl -sS -i -X POST \"$BASE/api/stripe/portal\" -H 'Cookie: $SESSION' -H 'Origin: https://evil.example'" \
+  "curl -sS -i -X POST \"$BASE/api/stripe/portal\" -H \"Cookie: $SESSION\" -H 'Origin: https://evil.example'" \
   "403" \
   "CSRF_ORIGIN_MISMATCH"
 
