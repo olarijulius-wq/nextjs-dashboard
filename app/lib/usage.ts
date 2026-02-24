@@ -1,6 +1,5 @@
-import postgres from 'postgres';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+import type postgres from 'postgres';
+import { sql } from '@/app/lib/db';
 
 export const USAGE_MIGRATION_REQUIRED_CODE = 'USAGE_MIGRATION_REQUIRED';
 
@@ -166,6 +165,19 @@ type UsageSchemaCapabilities = {
   hasReminderRunsRawJson: boolean;
   reminderRunsRawJsonType: string | null;
 };
+
+function coerceValidDate(value: Date | string | null | undefined, fallback: Date): Date {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallback;
+  }
+
+  return parsed;
+}
 
 function buildUsageMigrationRequiredError() {
   const error = new Error(USAGE_MIGRATION_REQUIRED_CODE) as Error & {
@@ -333,7 +345,8 @@ export async function resolveUsageScope(input: {
 }
 
 export async function getTallinnMonthWindow(now: Date = new Date()): Promise<TallinnWindow> {
-  const nowIso = now.toISOString();
+  const safeNow = coerceValidDate(now, new Date());
+  const nowIso = safeNow.toISOString();
   const [row] = await sql<{
     start_utc: Date;
     end_utc: Date;
@@ -349,9 +362,12 @@ export async function getTallinnMonthWindow(now: Date = new Date()): Promise<Tal
       to_char(date_trunc('month', ${nowIso}::timestamptz at time zone 'Europe/Tallinn') + interval '1 month', 'YYYY-MM-DD') as end_date
   `;
 
+  const fallbackStart = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth(), 1));
+  const fallbackEnd = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
+
   return {
-    startUtc: row.start_utc,
-    endUtc: row.end_utc,
+    startUtc: coerceValidDate(row?.start_utc, fallbackStart),
+    endUtc: coerceValidDate(row?.end_utc, fallbackEnd),
     startDate: row.start_date,
     endDate: row.end_date,
     timezone: 'Europe/Tallinn',
@@ -363,7 +379,8 @@ export async function getTallinnLastNDaysWindow(
   now: Date = new Date(),
 ): Promise<TallinnWindow> {
   const safeDays = Number.isFinite(days) ? Math.max(1, Math.min(90, Math.trunc(days))) : 30;
-  const nowIso = now.toISOString();
+  const safeNow = coerceValidDate(now, new Date());
+  const nowIso = safeNow.toISOString();
   const [row] = await sql<{
     start_utc: Date;
     end_utc: Date;
@@ -382,9 +399,12 @@ export async function getTallinnLastNDaysWindow(
       to_char((select end_day from local_bounds), 'YYYY-MM-DD') as end_date
   `;
 
+  const fallbackEnd = safeNow;
+  const fallbackStart = new Date(safeNow.getTime() - (safeDays - 1) * 24 * 60 * 60 * 1000);
+
   return {
-    startUtc: row.start_utc,
-    endUtc: row.end_utc,
+    startUtc: coerceValidDate(row?.start_utc, fallbackStart),
+    endUtc: coerceValidDate(row?.end_utc, fallbackEnd),
     startDate: row.start_date,
     endDate: row.end_date,
     timezone: 'Europe/Tallinn',
@@ -1006,12 +1026,17 @@ export async function fetchUsageSummary(
   monthEnd: Date,
 ): Promise<UsageSummary> {
   await assertUsageSchemaReady();
+  const safeMonthStart = coerceValidDate(monthStart, new Date());
+  const safeMonthEnd = coerceValidDate(
+    monthEnd,
+    new Date(safeMonthStart.getTime() + 31 * 24 * 60 * 60 * 1000),
+  );
 
   const window: TallinnWindow = {
-    startUtc: monthStart,
-    endUtc: monthEnd,
-    startDate: monthStart.toISOString().slice(0, 10),
-    endDate: monthEnd.toISOString().slice(0, 10),
+    startUtc: safeMonthStart,
+    endUtc: safeMonthEnd,
+    startDate: safeMonthStart.toISOString().slice(0, 10),
+    endDate: safeMonthEnd.toISOString().slice(0, 10),
     timezone: 'Europe/Tallinn',
   };
 
@@ -1020,8 +1045,8 @@ export async function fetchUsageSummary(
       select event_type, count(*)::text as count
       from public.workspace_usage_events
       where workspace_id = ${workspaceId}
-        and occurred_at >= ${monthStart.toISOString()}
-        and occurred_at < ${monthEnd.toISOString()}
+        and occurred_at >= ${safeMonthStart.toISOString()}
+        and occurred_at < ${safeMonthEnd.toISOString()}
         and event_type in ('invoice_updated', 'unsubscribe', 'resubscribe', 'smtp_test_sent')
       group by event_type
     `,

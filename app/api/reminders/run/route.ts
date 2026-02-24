@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { sendInvoiceReminderEmail } from '@/app/lib/email';
+import { getEffectiveMailConfig, sendInvoiceReminderEmail } from '@/app/lib/email';
 import { generatePayLink } from '@/app/lib/pay-link';
 import { sendWithThrottle } from '@/app/lib/throttled-batch-sender';
 import {
@@ -70,6 +70,7 @@ type ReminderCandidate = {
   customer_email: string | null;
   invoice_number: string | null;
   workspace_id: string | null;
+  owner_verified: boolean;
   invoice_paused: boolean;
   customer_paused: boolean;
   status: string;
@@ -82,6 +83,8 @@ type DecisionReason =
   | 'unsubscribed'
   | 'missing_email'
   | 'duplicate_in_run'
+  | 'owner_unverified'
+  | 'sender_not_configured'
   | 'not_eligible';
 
 type CandidateDecision = {
@@ -348,6 +351,7 @@ async function fetchReminderCandidates(
         customers.name AS customer_name,
         customers.email AS customer_email,
         workspaces.id AS workspace_id,
+        users.is_verified AS owner_verified,
         (invoice_pauses.invoice_id IS NOT NULL) AS invoice_paused,
         (customer_pauses.normalized_email IS NOT NULL) AS customer_paused
       FROM invoices
@@ -369,15 +373,14 @@ async function fetchReminderCandidates(
        AND customer_pauses.normalized_email = lower(trim(customers.email))
       WHERE
         users.plan in ('solo', 'pro', 'studio')
-        AND users.is_verified = true
         AND users.subscription_status in ('active', 'trialing')
-        AND invoices.status = 'pending'
+        AND invoices.status IN ('pending', 'overdue', 'failed')
         AND invoices.due_date IS NOT NULL
-        AND invoices.due_date < current_date
+        AND invoices.due_date < ((now() at time zone 'Europe/Tallinn')::date)
         AND invoices.reminder_level < 3
         AND (${scopeWorkspaceId}::uuid is null OR workspaces.id = ${scopeWorkspaceId}::uuid)
         AND (
-          (invoices.reminder_level = 0 AND current_date > invoices.due_date)
+          (invoices.reminder_level = 0 AND ((now() at time zone 'Europe/Tallinn')::date) > invoices.due_date)
           OR (
             invoices.reminder_level = 1
             AND invoices.last_reminder_sent_at <= now() - interval '7 days'
@@ -405,6 +408,7 @@ async function fetchReminderCandidates(
       customers.name AS customer_name,
       customers.email AS customer_email,
       workspaces.id AS workspace_id,
+      users.is_verified AS owner_verified,
       false AS invoice_paused,
       false AS customer_paused
     FROM invoices
@@ -421,15 +425,14 @@ async function fetchReminderCandidates(
     ) workspaces ON true
     WHERE
       users.plan in ('solo', 'pro', 'studio')
-      AND users.is_verified = true
       AND users.subscription_status in ('active', 'trialing')
-      AND invoices.status = 'pending'
+      AND invoices.status IN ('pending', 'overdue', 'failed')
       AND invoices.due_date IS NOT NULL
-      AND invoices.due_date < current_date
+      AND invoices.due_date < ((now() at time zone 'Europe/Tallinn')::date)
       AND invoices.reminder_level < 3
       AND (${scopeWorkspaceId}::uuid is null OR workspaces.id = ${scopeWorkspaceId}::uuid)
       AND (
-        (invoices.reminder_level = 0 AND current_date > invoices.due_date)
+        (invoices.reminder_level = 0 AND ((now() at time zone 'Europe/Tallinn')::date) > invoices.due_date)
         OR (
           invoices.reminder_level = 1
           AND invoices.last_reminder_sent_at <= now() - interval '7 days'
@@ -593,8 +596,10 @@ async function runReminderJob(req: Request) {
     const sentByUser = new Map<string, number>();
     let concurrentClaimSkips = 0;
 
+    const senderConfigured = getEffectiveMailConfig().ok;
+
     if (reminders.length === 0) {
-      console.log('No reminders to send (either none overdue or owners not verified).');
+      console.log('No overdue reminder candidates found.');
     }
 
     for (const reminder of reminders) {
@@ -614,14 +619,14 @@ async function runReminderJob(req: Request) {
       const workspaceAccumulator = getWorkspaceAccumulator(workspaceStats, reminder.workspace_id);
       const customerEmail = reminder.customer_email?.trim() ?? '';
 
-      if (reminder.status !== 'pending') {
+      if (!reminder.owner_verified) {
         decisions.push({
           invoiceId: reminder.id,
           workspaceId: reminder.workspace_id,
           willSend: false,
-          reason: 'not_eligible',
+          reason: 'owner_unverified',
         });
-        incrementSkip(workspaceAccumulator, 'not_eligible');
+        incrementSkip(workspaceAccumulator, 'owner_unverified');
         continue;
       }
 
@@ -655,6 +660,17 @@ async function runReminderJob(req: Request) {
           reason: 'missing_email',
         });
         incrementSkip(workspaceAccumulator, 'missing_email');
+        continue;
+      }
+
+      if (!senderConfigured) {
+        decisions.push({
+          invoiceId: reminder.id,
+          workspaceId: reminder.workspace_id,
+          willSend: false,
+          reason: 'sender_not_configured',
+        });
+        incrementSkip(workspaceAccumulator, 'sender_not_configured');
         continue;
       }
 
@@ -692,6 +708,17 @@ async function runReminderJob(req: Request) {
         reason: 'eligible',
       });
       eligibleReminders.push(reminder);
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      const reasonCounts = decisions.reduce<Record<string, number>>((acc, decision) => {
+        const key = decision.reason;
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log(
+        `[reminders] candidates total=${reminders.length} eligible=${eligibleReminders.length} reasons=${JSON.stringify(reasonCounts)}`,
+      );
     }
 
     const run = await sendWithThrottle(eligibleReminders, {
@@ -881,7 +908,11 @@ async function runReminderJob(req: Request) {
           return acc;
         }
 
-        if (decision.reason === 'not_eligible') {
+        if (
+          decision.reason === 'not_eligible' ||
+          decision.reason === 'owner_unverified' ||
+          decision.reason === 'sender_not_configured'
+        ) {
           acc.not_eligible += 1;
           return acc;
         }

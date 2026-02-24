@@ -145,6 +145,9 @@ export default function SmokeCheckPanel({
     try {
       const response = await fetch('/api/settings/smoke-check/test-email', {
         method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       });
       const payload = (await response.json().catch(() => null)) as
         | { ok?: boolean; rateLimited?: boolean; message?: string; retryAfterSec?: number; error?: string }

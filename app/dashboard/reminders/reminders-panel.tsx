@@ -142,14 +142,14 @@ function WillSendPill({ item }: { item: ReminderPanelItem }) {
   if (item.willSend === 'yes') {
     return (
       <span className="inline-flex items-center rounded-full border border-emerald-500/70 bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/20 dark:text-emerald-200">
-        Will send
+        Eligible
       </span>
     );
   }
 
   return (
     <span className="inline-flex items-center rounded-full border border-neutral-500/60 bg-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-900 dark:border-neutral-500/45 dark:bg-neutral-800 dark:text-neutral-100">
-      {item.skipReason ?? 'Skipped'}
+      {item.skipReason ?? 'Blocked'}
     </span>
   );
 }
@@ -1075,11 +1075,12 @@ export default function RemindersPanel({
     setLatestRunResult(null);
     startRunTransition(async () => {
       try {
-        const response = await fetch('/api/reminders/run-manual', {
+        const response = await fetch('/api/reminders/run', {
           method: 'POST',
+          credentials: 'same-origin',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dryRun }),
+          body: JSON.stringify({ dryRun, triggeredBy: 'manual', source: 'manual' }),
         });
         const payload = (await response.json().catch(() => null)) as {
           updatedCount?: number;

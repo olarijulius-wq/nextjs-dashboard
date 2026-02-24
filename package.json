@@ -16,7 +16,6 @@
     "bcrypt": "^5.1.1",
     "clsx": "^2.1.1",
     "framer-motion": "^11.15.0",
-    "import-in-the-middle": "^3.0.0",
     "next": "^15.5.9",
     "next-auth": "5.0.0-beta.30",
     "nodemailer": "^8.0.1",
@@ -46,6 +45,9 @@
     "eslint-config-next": "^16.1.1"
   },
   "pnpm": {
+    "overrides": {
+      "import-in-the-middle": "2.0.6"
+    },
     "onlyBuiltDependencies": [
       "bcrypt",
       "sharp"

@@ -43,7 +43,7 @@ function formatDateLabel(dateIso: string) {
 }
 
 function metricLabel(metric: InvoiceUsageMetric) {
-  if (metric === 'created') return 'Created (app)';
+  if (metric === 'created') return 'Created';
   if (metric === 'sent') return 'Sent (email)';
   if (metric === 'paid') return 'Paid';
   return 'Issued';
@@ -216,8 +216,8 @@ export default async function UsageSettingsPage({
 
   const monthlyInvoicesUsed = monthCreated;
   const usageSubtext = isUnlimited
-    ? `This month: ${monthlyInvoicesUsed} used`
-    : `This month: ${monthlyInvoicesUsed} / ${usage.maxPerMonth} used`;
+    ? `Invoices created this month: ${monthlyInvoicesUsed}`
+    : `Invoices created this month: ${monthlyInvoicesUsed} / ${usage.maxPerMonth}`;
 
   const currentHref = buildUsageHref({
     metric: activeMetric,
@@ -231,9 +231,11 @@ export default async function UsageSettingsPage({
       <header>
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Usage</h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          {formatMonthLabel(monthWindow.monthStart)}. Monthly plan usage is based on Created (app).
+          {formatMonthLabel(monthWindow.monthStart)}. Invoices created this month.
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Plan usage resets monthly.</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Usage counters reset each month for your current plan period.
+        </p>
       </header>
 
       {(usageMigrationRequired || teamMigrationRequired) && (

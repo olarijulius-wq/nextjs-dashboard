@@ -1,0 +1,2 @@
+// Deprecated: intentionally empty.
+// Client-side Sentry initialization now lives in instrumentation-client.ts.

@@ -311,7 +311,7 @@ export default async function BillingSettingsPage(props: {
           </p>
         ) : null}
 
-        {subscriptionStatus && (
+        {canViewInternalBillingDebug && subscriptionStatus && (
           <p className="text-xs text-slate-500 dark:text-neutral-500">
             Subscription status: {subscriptionStatus}
           </p>
@@ -428,51 +428,53 @@ export default async function BillingSettingsPage(props: {
         <ManageBillingButton label={billingPortalLabel} />
       </PricingPanel>
 
-      <PricingPanel className="space-y-3">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Payment status</h3>
-        <div className="grid gap-2 text-sm text-slate-700 dark:text-neutral-300">
-          <p>
-            Subscription status:{' '}
-            <span className="font-medium text-slate-900 dark:text-neutral-100">
-              {paymentStatus}
-            </span>
-          </p>
-          <p>
-            Recovery required:{' '}
-            <span className="font-medium text-slate-900 dark:text-neutral-100">
-              {recoveryRequired ? 'yes' : 'no'}
-            </span>
-          </p>
-          {lastPaymentFailureLabel ? (
+      {canViewInternalBillingDebug ? (
+        <PricingPanel className="space-y-3">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Payment status</h3>
+          <div className="grid gap-2 text-sm text-slate-700 dark:text-neutral-300">
             <p>
-              Last payment failure:{' '}
+              Subscription status:{' '}
               <span className="font-medium text-slate-900 dark:text-neutral-100">
-                {lastPaymentFailureLabel}
+                {paymentStatus}
               </span>
             </p>
-          ) : null}
-          {latestBillingEvent ? (
             <p>
-              Latest billing event:{' '}
+              Recovery required:{' '}
               <span className="font-medium text-slate-900 dark:text-neutral-100">
-                {latestBillingEvent.eventType}
-                {latestBillingEventRelative ? ` (${latestBillingEventRelative})` : ''}
+                {recoveryRequired ? 'yes' : 'no'}
               </span>
             </p>
+            {lastPaymentFailureLabel ? (
+              <p>
+                Last payment failure:{' '}
+                <span className="font-medium text-slate-900 dark:text-neutral-100">
+                  {lastPaymentFailureLabel}
+                </span>
+              </p>
+            ) : null}
+            {latestBillingEvent ? (
+              <p>
+                Latest billing event:{' '}
+                <span className="font-medium text-slate-900 dark:text-neutral-100">
+                  {latestBillingEvent.eventType}
+                  {latestBillingEventRelative ? ` (${latestBillingEventRelative})` : ''}
+                </span>
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recoveryRequired && canRunSelfCheck ? <SendRecoveryEmailButton /> : null}
+          </div>
+          {canRunSelfCheck ? (
+            <Link
+              href="/dashboard/settings/billing-events"
+              className={`${secondaryButtonClasses} w-fit rounded-full`}
+            >
+              Open billing events
+            </Link>
           ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {recoveryRequired && canRunSelfCheck ? <SendRecoveryEmailButton /> : null}
-        </div>
-        {canRunSelfCheck ? (
-          <Link
-            href="/dashboard/settings/billing-events"
-            className={`${secondaryButtonClasses} w-fit rounded-full`}
-          >
-            Open billing events
-          </Link>
-        ) : null}
-      </PricingPanel>
+        </PricingPanel>
+      ) : null}
 
       {canRunSelfCheck ? (
         <PricingPanel>

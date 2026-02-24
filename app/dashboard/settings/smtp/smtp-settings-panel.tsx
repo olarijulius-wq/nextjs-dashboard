@@ -299,7 +299,7 @@ export default function SmtpSettingsPanel({
                 <code className="ml-1 rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">v=DMARC1; p=none; rua=mailto:postmaster@yourdomain.com</code>
               </p>
               <a
-                href="https://resend.com/docs/knowledge-base/what-records-do-i-need-in-my-dns"
+                href="https://resend.com/docs/dashboard/domains/introduction"
                 target="_blank"
                 rel="noreferrer noopener"
                 className="inline-flex h-8 items-center rounded-lg border border-neutral-300 px-2 text-xs font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"

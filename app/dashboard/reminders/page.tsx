@@ -1,5 +1,4 @@
 import { Metadata } from 'next';
-import postgres from 'postgres';
 import RemindersPanel from './reminders-panel';
 import {
   ensureWorkspaceContextForCurrentUser,
@@ -22,12 +21,12 @@ import { generatePayLink } from '@/app/lib/pay-link';
 import type { ReminderPanelItem } from './reminders-panel';
 import { fetchWorkspaceDunningState } from '@/app/lib/billing-dunning';
 import DashboardPageTitle from '@/app/ui/dashboard/page-title';
+import { getEffectiveMailConfig } from '@/app/lib/email';
+import { sql } from '@/app/lib/db';
 
 export const metadata: Metadata = {
   title: 'Reminders',
 };
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 type ReminderQueryRow = {
   invoice_id: string;
@@ -39,6 +38,7 @@ type ReminderQueryRow = {
   status: string;
   customer_name: string;
   customer_email: string | null;
+  owner_verified: boolean;
   next_send_date: string | Date;
   cadence_reason: string;
   unsubscribe_enabled: boolean;
@@ -89,11 +89,23 @@ function getEmailDomain(email: string) {
   return domain || null;
 }
 
+function toSafeIso(value: string | Date | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
 async function fetchUpcomingReminders(
   workspaceId: string,
   includeUnsubscribeJoin: boolean,
   includeReminderPauseJoin: boolean,
 ) {
+  // Sanity guard: UI eligibility mirrors reminder-run rules for collectable overdue invoices.
   if (includeUnsubscribeJoin && includeReminderPauseJoin) {
     return sql<ReminderQueryRow[]>`
       SELECT
@@ -106,11 +118,12 @@ async function fetchUpcomingReminders(
         invoices.status,
         customers.name AS customer_name,
         customers.email AS customer_email,
+        users.is_verified AS owner_verified,
         CASE
-          WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, current_date)
+          WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, ((now() at time zone 'Europe/Tallinn')::date))
           WHEN invoices.reminder_level = 1 THEN (invoices.last_reminder_sent_at + interval '7 days')::date
           WHEN invoices.reminder_level = 2 THEN (invoices.last_reminder_sent_at + interval '14 days')::date
-          ELSE current_date
+          ELSE ((now() at time zone 'Europe/Tallinn')::date)
         END AS next_send_date,
         CASE
           WHEN invoices.reminder_level = 0 THEN 'Overdue'
@@ -128,13 +141,16 @@ async function fetchUpcomingReminders(
           ELSE null
         END AS pause_state,
         CASE
-          WHEN invoice_pauses.invoice_id IS NOT NULL THEN 'Skipped (paused)'
-          WHEN customer_pauses.normalized_email IS NOT NULL THEN 'Skipped (paused)'
-          WHEN trim(coalesce(customers.email, '')) = '' THEN 'Skipped (missing customer email)'
-          WHEN COALESCE(unsub_settings.enabled, true) AND unsub.normalized_email IS NOT NULL THEN 'Skipped (unsubscribed)'
+          WHEN users.is_verified <> true THEN 'Blocked: sender not verified'
+          WHEN invoice_pauses.invoice_id IS NOT NULL THEN 'Blocked: reminders paused'
+          WHEN customer_pauses.normalized_email IS NOT NULL THEN 'Blocked: reminders paused'
+          WHEN trim(coalesce(customers.email, '')) = '' THEN 'Blocked: missing payer email'
+          WHEN COALESCE(unsub_settings.enabled, true) AND unsub.normalized_email IS NOT NULL THEN 'Blocked: unsubscribed'
           ELSE null
         END AS skip_reason,
         NOT (
+          users.is_verified <> true
+          OR
           invoice_pauses.invoice_id IS NOT NULL
           OR customer_pauses.normalized_email IS NOT NULL
           OR trim(coalesce(customers.email, '')) = ''
@@ -160,15 +176,21 @@ async function fetchUpcomingReminders(
        AND customer_pauses.normalized_email = lower(trim(customers.email))
       WHERE
         users.plan IN ('solo', 'pro', 'studio')
-        AND users.is_verified = true
         AND users.subscription_status IN ('active', 'trialing')
-        AND invoices.status = 'pending'
+        AND invoices.status IN ('pending', 'overdue', 'failed')
         AND invoices.due_date IS NOT NULL
-        AND invoices.due_date < current_date
+        AND invoices.due_date < ((now() at time zone 'Europe/Tallinn')::date)
         AND invoices.reminder_level < 3
         AND (
-          invoices.reminder_level = 0
-          OR (invoices.reminder_level IN (1, 2) AND invoices.last_reminder_sent_at IS NOT NULL)
+          (invoices.reminder_level = 0 AND ((now() at time zone 'Europe/Tallinn')::date) > invoices.due_date)
+          OR (
+            invoices.reminder_level = 1
+            AND invoices.last_reminder_sent_at <= now() - interval '7 days'
+          )
+          OR (
+            invoices.reminder_level = 2
+            AND invoices.last_reminder_sent_at <= now() - interval '14 days'
+          )
         )
       ORDER BY
         next_send_date ASC,
@@ -189,11 +211,12 @@ async function fetchUpcomingReminders(
         invoices.status,
         customers.name AS customer_name,
         customers.email AS customer_email,
+        users.is_verified AS owner_verified,
         CASE
-          WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, current_date)
+          WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, ((now() at time zone 'Europe/Tallinn')::date))
           WHEN invoices.reminder_level = 1 THEN (invoices.last_reminder_sent_at + interval '7 days')::date
           WHEN invoices.reminder_level = 2 THEN (invoices.last_reminder_sent_at + interval '14 days')::date
-          ELSE current_date
+          ELSE ((now() at time zone 'Europe/Tallinn')::date)
         END AS next_send_date,
         CASE
           WHEN invoices.reminder_level = 0 THEN 'Overdue'
@@ -207,11 +230,14 @@ async function fetchUpcomingReminders(
         false AS customer_paused,
         null AS pause_state,
         CASE
-          WHEN trim(coalesce(customers.email, '')) = '' THEN 'Skipped (missing customer email)'
-          WHEN COALESCE(unsub_settings.enabled, true) AND unsub.normalized_email IS NOT NULL THEN 'Skipped (unsubscribed)'
+          WHEN users.is_verified <> true THEN 'Blocked: sender not verified'
+          WHEN trim(coalesce(customers.email, '')) = '' THEN 'Blocked: missing payer email'
+          WHEN COALESCE(unsub_settings.enabled, true) AND unsub.normalized_email IS NOT NULL THEN 'Blocked: unsubscribed'
           ELSE null
         END AS skip_reason,
         NOT (
+          users.is_verified <> true
+          OR
           trim(coalesce(customers.email, '')) = ''
           OR (COALESCE(unsub_settings.enabled, true) AND unsub.normalized_email IS NOT NULL)
         ) AS will_send
@@ -230,15 +256,21 @@ async function fetchUpcomingReminders(
        AND unsub.normalized_email = lower(trim(customers.email))
       WHERE
         users.plan IN ('solo', 'pro', 'studio')
-        AND users.is_verified = true
         AND users.subscription_status IN ('active', 'trialing')
-        AND invoices.status = 'pending'
+        AND invoices.status IN ('pending', 'overdue', 'failed')
         AND invoices.due_date IS NOT NULL
-        AND invoices.due_date < current_date
+        AND invoices.due_date < ((now() at time zone 'Europe/Tallinn')::date)
         AND invoices.reminder_level < 3
         AND (
-          invoices.reminder_level = 0
-          OR (invoices.reminder_level IN (1, 2) AND invoices.last_reminder_sent_at IS NOT NULL)
+          (invoices.reminder_level = 0 AND ((now() at time zone 'Europe/Tallinn')::date) > invoices.due_date)
+          OR (
+            invoices.reminder_level = 1
+            AND invoices.last_reminder_sent_at <= now() - interval '7 days'
+          )
+          OR (
+            invoices.reminder_level = 2
+            AND invoices.last_reminder_sent_at <= now() - interval '14 days'
+          )
         )
       ORDER BY
         next_send_date ASC,
@@ -258,11 +290,12 @@ async function fetchUpcomingReminders(
         invoices.status,
         customers.name AS customer_name,
         customers.email AS customer_email,
+      users.is_verified AS owner_verified,
       CASE
-        WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, current_date)
+        WHEN invoices.reminder_level = 0 THEN GREATEST(invoices.due_date + 1, ((now() at time zone 'Europe/Tallinn')::date))
         WHEN invoices.reminder_level = 1 THEN (invoices.last_reminder_sent_at + interval '7 days')::date
         WHEN invoices.reminder_level = 2 THEN (invoices.last_reminder_sent_at + interval '14 days')::date
-        ELSE current_date
+        ELSE ((now() at time zone 'Europe/Tallinn')::date)
       END AS next_send_date,
       CASE
         WHEN invoices.reminder_level = 0 THEN 'Overdue'
@@ -276,10 +309,11 @@ async function fetchUpcomingReminders(
       false AS customer_paused,
       null AS pause_state,
       CASE
-        WHEN trim(coalesce(customers.email, '')) = '' THEN 'Skipped (missing customer email)'
+        WHEN users.is_verified <> true THEN 'Blocked: sender not verified'
+        WHEN trim(coalesce(customers.email, '')) = '' THEN 'Blocked: missing payer email'
         ELSE null
       END AS skip_reason,
-      trim(coalesce(customers.email, '')) <> '' AS will_send
+      users.is_verified = true AND trim(coalesce(customers.email, '')) <> '' AS will_send
     FROM public.invoices
     JOIN public.customers
       ON customers.id = invoices.customer_id
@@ -290,15 +324,21 @@ async function fetchUpcomingReminders(
       AND wm.workspace_id = ${workspaceId}
     WHERE
       users.plan IN ('solo', 'pro', 'studio')
-      AND users.is_verified = true
       AND users.subscription_status IN ('active', 'trialing')
-      AND invoices.status = 'pending'
+      AND invoices.status IN ('pending', 'overdue', 'failed')
       AND invoices.due_date IS NOT NULL
-      AND invoices.due_date < current_date
+      AND invoices.due_date < ((now() at time zone 'Europe/Tallinn')::date)
       AND invoices.reminder_level < 3
       AND (
-        invoices.reminder_level = 0
-        OR (invoices.reminder_level IN (1, 2) AND invoices.last_reminder_sent_at IS NOT NULL)
+        (invoices.reminder_level = 0 AND ((now() at time zone 'Europe/Tallinn')::date) > invoices.due_date)
+        OR (
+          invoices.reminder_level = 1
+          AND invoices.last_reminder_sent_at <= now() - interval '7 days'
+        )
+        OR (
+          invoices.reminder_level = 2
+          AND invoices.last_reminder_sent_at <= now() - interval '14 days'
+        )
       )
     ORDER BY
       next_send_date ASC,
@@ -358,6 +398,18 @@ export default async function RemindersPage() {
       includeUnsubscribeJoin,
       includeReminderPauseJoin,
     );
+    const senderConfigured = getEffectiveMailConfig({
+      workspaceSettings: emailSettings
+        ? {
+            provider: emailSettings.provider,
+            fromEmail: emailSettings.fromEmail,
+            smtpHost: emailSettings.smtpHost,
+            smtpPort: emailSettings.smtpPort,
+            smtpUsername: emailSettings.smtpUsername,
+            smtpPasswordPresent: emailSettings.smtpPasswordPresent,
+          }
+        : null,
+    }).ok;
 
     const items: ReminderPanelItem[] = rows.map((row) => {
       const reminderNumber = row.reminder_level + 1;
@@ -365,8 +417,11 @@ export default async function RemindersPage() {
       const dueDateLabel = formatDate(row.due_date);
       const nextSendDateLabel = formatDate(row.next_send_date);
       const customerEmail = row.customer_email?.trim() ?? '';
-      const willSend: ReminderPanelItem['willSend'] = row.will_send ? 'yes' : 'no';
-      const skipReason = row.skip_reason;
+      const skipReason = !senderConfigured
+        ? 'Blocked: sender not configured'
+        : row.skip_reason ?? null;
+      const willSend: ReminderPanelItem['willSend'] =
+        row.will_send && senderConfigured ? 'yes' : 'no';
 
       let payLinkPreview = `${baseUrl}/pay/${row.invoice_id}`;
       try {
@@ -413,11 +468,9 @@ export default async function RemindersPage() {
         unsubscribeEnabled: unsubscribeEnabled && row.unsubscribe_enabled,
         isInvoicePaused: row.invoice_paused,
         isCustomerPaused: row.customer_paused,
-        dueDateIso: new Date(row.due_date).toISOString(),
-        nextSendDateIso: new Date(row.next_send_date).toISOString(),
-        lastReminderSentAtIso: row.last_reminder_sent_at
-          ? new Date(row.last_reminder_sent_at).toISOString()
-          : null,
+        dueDateIso: toSafeIso(row.due_date) ?? '',
+        nextSendDateIso: toSafeIso(row.next_send_date) ?? '',
+        lastReminderSentAtIso: toSafeIso(row.last_reminder_sent_at),
         reminderLevel: row.reminder_level,
         subject,
         previewBody,

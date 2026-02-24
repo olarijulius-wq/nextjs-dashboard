@@ -1,11 +1,9 @@
-import postgres from 'postgres';
 import { auth } from '@/auth';
 import {
   ensureWorkspaceContextForCurrentUser,
   isTeamMigrationRequiredError,
 } from '@/app/lib/workspaces';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+import { sql } from '@/app/lib/db';
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
