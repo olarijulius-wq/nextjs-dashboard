@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import RemindersPanel from './reminders-panel';
 import {
   ensureWorkspaceContextForCurrentUser,
@@ -307,7 +308,16 @@ async function fetchUpcomingReminders(
 
 export default async function RemindersPage() {
   try {
-    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    let workspaceContext;
+    try {
+      workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        redirect('/login');
+        return;
+      }
+      throw error;
+    }
     const dunningState = await fetchWorkspaceDunningState(workspaceContext.workspaceId);
     const showRecoveryWarning = Boolean(dunningState?.recoveryRequired);
     const baseUrl = resolveBaseUrl();
