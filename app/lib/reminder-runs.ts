@@ -23,6 +23,7 @@ export type ReminderRunErrorItem = {
 export type ReminderRunInsertPayload = {
   triggeredBy: ReminderRunTriggeredBy;
   dryRun: boolean;
+  attemptedCount: number;
   sentCount: number;
   skippedCount: number;
   errorCount: number;
@@ -38,6 +39,7 @@ export type ReminderRunRecord = {
   ranAt: string;
   triggeredBy: ReminderRunTriggeredBy;
   dryRun: boolean;
+  attemptedCount: number;
   sentCount: number;
   skippedCount: number;
   errorCount: number;
@@ -63,19 +65,43 @@ export function isReminderRunsMigrationRequiredError(error: unknown): boolean {
 }
 
 let reminderRunsSchemaReadyPromise: Promise<void> | null = null;
+let reminderRunsSchemaMetaPromise: Promise<{ hasAttemptedCount: boolean }> | null = null;
 
-export async function assertReminderRunsSchemaReady(): Promise<void> {
-  if (!reminderRunsSchemaReadyPromise) {
-    reminderRunsSchemaReadyPromise = (async () => {
+async function getReminderRunsSchemaMeta() {
+  if (!reminderRunsSchemaMetaPromise) {
+    reminderRunsSchemaMetaPromise = (async () => {
       const [result] = await sql<{
         runs: string | null;
+        has_attempted_count: boolean;
       }[]>`
-        select to_regclass('public.workspace_reminder_runs') as runs
+        select
+          to_regclass('public.workspace_reminder_runs') as runs,
+          exists (
+            select 1
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'workspace_reminder_runs'
+              and column_name = 'attempted_count'
+          ) as has_attempted_count
       `;
 
       if (!result?.runs) {
         throw buildReminderRunsMigrationRequiredError();
       }
+
+      return {
+        hasAttemptedCount: result.has_attempted_count,
+      };
+    })();
+  }
+
+  return reminderRunsSchemaMetaPromise;
+}
+
+export async function assertReminderRunsSchemaReady(): Promise<void> {
+  if (!reminderRunsSchemaReadyPromise) {
+    reminderRunsSchemaReadyPromise = (async () => {
+      await getReminderRunsSchemaMeta();
     })();
   }
 
@@ -86,7 +112,7 @@ export async function insertReminderRun(
   workspaceId: string,
   payload: ReminderRunInsertPayload,
 ) {
-  await assertReminderRunsSchemaReady();
+  const schemaMeta = await getReminderRunsSchemaMeta();
 
   const ranAt =
     payload.ranAt instanceof Date
@@ -95,12 +121,68 @@ export async function insertReminderRun(
         ? payload.ranAt
         : null;
 
-  const [row] = await sql<{
+  const [row] = await (schemaMeta.hasAttemptedCount
+    ? sql<{
+      id: string;
+      workspace_id: string;
+      ran_at: Date;
+      triggered_by: ReminderRunTriggeredBy;
+      dry_run: boolean;
+      attempted_count: number | null;
+      sent_count: number;
+      skipped_count: number;
+      error_count: number;
+      skipped_breakdown: ReminderRunSkippedBreakdown;
+      duration_ms: number | null;
+      errors: ReminderRunErrorItem[];
+    }[]>`
+    insert into public.workspace_reminder_runs (
+      workspace_id,
+      ran_at,
+      triggered_by,
+      dry_run,
+      attempted_count,
+      sent_count,
+      skipped_count,
+      error_count,
+      skipped_breakdown,
+      duration_ms,
+      errors
+    )
+    values (
+      ${workspaceId},
+      coalesce(${ranAt}::timestamptz, now()),
+      ${payload.triggeredBy},
+      ${payload.dryRun},
+      ${payload.attemptedCount},
+      ${payload.sentCount},
+      ${payload.skippedCount},
+      ${payload.errorCount},
+      ${JSON.stringify(payload.skippedBreakdown)}::jsonb,
+      ${payload.durationMs},
+      ${JSON.stringify(payload.errors)}::jsonb
+    )
+    returning
+      id,
+      workspace_id,
+      ran_at,
+      triggered_by,
+      dry_run,
+      attempted_count,
+      sent_count,
+      skipped_count,
+      error_count,
+      skipped_breakdown,
+      duration_ms,
+      errors
+  `
+    : sql<{
     id: string;
     workspace_id: string;
     ran_at: Date;
     triggered_by: ReminderRunTriggeredBy;
     dry_run: boolean;
+    attempted_count: number | null;
     sent_count: number;
     skipped_count: number;
     error_count: number;
@@ -138,13 +220,14 @@ export async function insertReminderRun(
       ran_at,
       triggered_by,
       dry_run,
+      null::integer as attempted_count,
       sent_count,
       skipped_count,
       error_count,
       skipped_breakdown,
       duration_ms,
       errors
-  `;
+  `);
 
   return {
     id: row.id,
@@ -152,6 +235,10 @@ export async function insertReminderRun(
     ranAt: row.ran_at.toISOString(),
     triggeredBy: row.triggered_by,
     dryRun: row.dry_run,
+    attemptedCount:
+      typeof row.attempted_count === 'number'
+        ? row.attempted_count
+        : payload.attemptedCount,
     sentCount: row.sent_count,
     skippedCount: row.skipped_count,
     errorCount: row.error_count,
@@ -162,18 +249,52 @@ export async function insertReminderRun(
 }
 
 export async function listReminderRuns(workspaceId: string, limit = 25) {
-  await assertReminderRunsSchemaReady();
+  const schemaMeta = await getReminderRunsSchemaMeta();
 
   const safeLimit = Number.isFinite(limit)
     ? Math.max(1, Math.min(100, Math.trunc(limit)))
     : 25;
 
-  const rows = await sql<{
+  const rows = await (schemaMeta.hasAttemptedCount
+    ? sql<{
+      id: string;
+      workspace_id: string;
+      ran_at: Date;
+      triggered_by: ReminderRunTriggeredBy;
+      dry_run: boolean;
+      attempted_count: number | null;
+      sent_count: number;
+      skipped_count: number;
+      error_count: number;
+      skipped_breakdown: ReminderRunSkippedBreakdown;
+      duration_ms: number | null;
+      errors: ReminderRunErrorItem[];
+    }[]>`
+    select
+      id,
+      workspace_id,
+      ran_at,
+      triggered_by,
+      dry_run,
+      attempted_count,
+      sent_count,
+      skipped_count,
+      error_count,
+      skipped_breakdown,
+      duration_ms,
+      errors
+    from public.workspace_reminder_runs
+    where workspace_id = ${workspaceId}
+    order by ran_at desc
+    limit ${safeLimit}
+  `
+    : sql<{
     id: string;
     workspace_id: string;
     ran_at: Date;
     triggered_by: ReminderRunTriggeredBy;
     dry_run: boolean;
+    attempted_count: number | null;
     sent_count: number;
     skipped_count: number;
     error_count: number;
@@ -187,6 +308,7 @@ export async function listReminderRuns(workspaceId: string, limit = 25) {
       ran_at,
       triggered_by,
       dry_run,
+      null::integer as attempted_count,
       sent_count,
       skipped_count,
       error_count,
@@ -197,7 +319,7 @@ export async function listReminderRuns(workspaceId: string, limit = 25) {
     where workspace_id = ${workspaceId}
     order by ran_at desc
     limit ${safeLimit}
-  `;
+  `);
 
   return rows.map((row) => ({
     id: row.id,
@@ -205,6 +327,10 @@ export async function listReminderRuns(workspaceId: string, limit = 25) {
     ranAt: row.ran_at.toISOString(),
     triggeredBy: row.triggered_by,
     dryRun: row.dry_run,
+    attemptedCount:
+      typeof row.attempted_count === 'number'
+        ? row.attempted_count
+        : row.sent_count + row.error_count,
     sentCount: row.sent_count,
     skippedCount: row.skipped_count,
     errorCount: row.error_count,

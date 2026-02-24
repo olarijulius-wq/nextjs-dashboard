@@ -58,33 +58,16 @@ type ReminderRunErrorItem = {
 };
 
 type ReminderRunRecord = {
-  id: string;
-  workspaceId: string;
-  ranAt: string;
-  triggeredBy: 'manual' | 'cron' | 'dev';
-  dryRun: boolean;
-  sentCount: number;
-  skippedCount: number;
-  errorCount: number;
-  skippedBreakdown: ReminderRunSkippedBreakdown;
-  durationMs: number | null;
-  errors: ReminderRunErrorItem[];
-};
-
-type ReminderRunResult = {
-  ranAt: string;
-  dryRun: boolean;
-  durationMs: number;
-  summary: {
-    sentCount: number;
-    skippedCount: number;
-    errorCount: number;
-    skippedBreakdown: ReminderRunSkippedBreakdown;
-    wouldSendCount?: number;
-  };
-  errors: ReminderRunErrorItem[];
-  runLogWritten: boolean;
-  runLogWarning: string | null;
+  run_id: string;
+  ran_at: string;
+  source: 'manual' | 'cron' | 'dev';
+  dry_run: boolean;
+  attempted: number;
+  sent: number;
+  skipped: number;
+  errors: number;
+  duration_ms: number | null;
+  skipped_breakdown: ReminderRunSkippedBreakdown;
 };
 
 function formatRunTimestamp(value: string) {
@@ -99,7 +82,7 @@ function formatRunTimestamp(value: string) {
   }).format(parsed);
 }
 
-function formatTriggeredBy(value: ReminderRunRecord['triggeredBy']) {
+function formatTriggeredBy(value: ReminderRunRecord['source']) {
   if (value === 'dev') {
     return 'Dev';
   }
@@ -754,8 +737,8 @@ function EmailPreviewCard({
   );
 }
 
-function RunResultCard({ result }: { result: ReminderRunResult }) {
-  const skipped = result.summary.skippedBreakdown;
+function RunResultCard({ run }: { run: ReminderRunRecord }) {
+  const skipped = run.skipped_breakdown;
 
   return (
     <article className="rounded-xl border border-neutral-300 bg-neutral-100 p-3 dark:border-neutral-700 dark:bg-neutral-900">
@@ -764,54 +747,34 @@ function RunResultCard({ result }: { result: ReminderRunResult }) {
           Last run result
         </p>
         <span className="inline-flex items-center rounded-full border border-neutral-400 bg-white px-2 py-0.5 text-xs font-medium text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100">
-          {result.dryRun ? 'Dry run' : 'Normal'}
+          {run.dry_run ? 'Dry run' : 'Normal'}
         </span>
       </div>
       <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-        {formatRunTimestamp(result.ranAt)}
+        {formatRunTimestamp(run.ran_at)}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-neutral-800 md:grid-cols-4 dark:text-neutral-200">
         <p>
-          Sent: <span className="font-semibold">{result.summary.sentCount}</span>
+          Attempted: <span className="font-semibold">{run.attempted}</span>
         </p>
         <p>
-          Skipped: <span className="font-semibold">{result.summary.skippedCount}</span>
+          Sent: <span className="font-semibold">{run.sent}</span>
         </p>
         <p>
-          Errors: <span className="font-semibold">{result.summary.errorCount}</span>
+          Skipped: <span className="font-semibold">{run.skipped}</span>
         </p>
         <p>
-          Duration: <span className="font-semibold">{result.durationMs} ms</span>
+          Errors: <span className="font-semibold">{run.errors}</span>
         </p>
       </div>
+      <p className="mt-2 text-xs text-neutral-700 dark:text-neutral-300">Duration: {run.duration_ms ?? 0} ms</p>
       <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-neutral-700 md:grid-cols-2 dark:text-neutral-300">
         <p>Skipped paused: {skipped.paused ?? 0}</p>
         <p>Skipped unsubscribed: {skipped.unsubscribed ?? 0}</p>
         <p>Skipped missing email: {skipped.missing_email ?? 0}</p>
         <p>Skipped not eligible: {skipped.not_eligible ?? 0}</p>
+        <p>Skipped other: {skipped.other ?? 0}</p>
       </div>
-      {result.dryRun && typeof result.summary.wouldSendCount === 'number' ? (
-        <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-          Would send (dry run): {result.summary.wouldSendCount}
-        </p>
-      ) : null}
-      {result.errors.length > 0 ? (
-        <div className="mt-3 space-y-1">
-          <p className="text-xs uppercase tracking-[0.08em] text-neutral-500">Last 10 errors</p>
-          <ul className="space-y-1 text-xs text-neutral-700 dark:text-neutral-300">
-            {result.errors.map((error, index) => (
-              <li key={`${error.invoiceId}-${index}`} className="rounded border border-neutral-300 bg-white px-2 py-1 dark:border-neutral-700 dark:bg-neutral-950">
-                {error.invoiceId}: {error.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {result.runLogWarning ? (
-        <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-          Run log warning: {result.runLogWarning}
-        </p>
-      ) : null}
     </article>
   );
 }
@@ -820,13 +783,12 @@ function RecentRunsCard({
   runs,
   loading,
   errorMessage,
-  latestResult,
 }: {
   runs: ReminderRunRecord[];
   loading: boolean;
   errorMessage: string;
-  latestResult: ReminderRunResult | null;
 }) {
+  const latestRun = runs[0] ?? null;
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950 md:p-5">
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Recent runs</h2>
@@ -834,7 +796,7 @@ function RecentRunsCard({
         Persistent run history for this workspace.
       </p>
 
-      {latestResult ? <div className="mt-4"><RunResultCard result={latestResult} /></div> : null}
+      {latestRun ? <div className="mt-4"><RunResultCard run={latestRun} /></div> : null}
 
       {loading ? (
         <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">Loading recent runs...</p>
@@ -846,48 +808,34 @@ function RecentRunsCard({
         <div className="mt-4 space-y-2">
           {runs.map((run) => (
             <details
-              key={run.id}
+              key={run.run_id}
               className="rounded-lg border border-neutral-200 bg-neutral-100 p-3 dark:border-neutral-800 dark:bg-neutral-900"
             >
               <summary className="cursor-pointer list-none">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    {formatRunTimestamp(run.ranAt)}
+                    {formatRunTimestamp(run.ran_at)}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300">
                     <span className="rounded border border-neutral-400 bg-white px-2 py-0.5 dark:border-neutral-600 dark:bg-neutral-950">
-                      {run.dryRun ? 'Dry run' : 'Normal'}
+                      {run.dry_run ? 'Dry run' : 'Normal'}
                     </span>
-                    <span>{formatTriggeredBy(run.triggeredBy)}</span>
-                    <span>Sent {run.sentCount}</span>
-                    <span>Skipped {run.skippedCount}</span>
-                    <span>Errors {run.errorCount}</span>
+                    <span>{formatTriggeredBy(run.source)}</span>
+                    <span>Attempted {run.attempted}</span>
+                    <span>Sent {run.sent}</span>
+                    <span>Skipped {run.skipped}</span>
+                    <span>Errors {run.errors}</span>
                   </div>
                 </div>
               </summary>
               <div className="mt-3 space-y-2 text-xs text-neutral-700 dark:text-neutral-300">
-                <p>Duration: {run.durationMs ?? 0} ms</p>
+                <p>Duration: {run.duration_ms ?? 0} ms</p>
                 <p>
-                  Skipped breakdown: paused {run.skippedBreakdown.paused ?? 0}, unsubscribed{' '}
-                  {run.skippedBreakdown.unsubscribed ?? 0}, missing email{' '}
-                  {run.skippedBreakdown.missing_email ?? 0}, not eligible{' '}
-                  {run.skippedBreakdown.not_eligible ?? 0}, other {run.skippedBreakdown.other ?? 0}
+                  Skipped breakdown: paused {run.skipped_breakdown.paused ?? 0}, unsubscribed{' '}
+                  {run.skipped_breakdown.unsubscribed ?? 0}, missing email{' '}
+                  {run.skipped_breakdown.missing_email ?? 0}, not eligible{' '}
+                  {run.skipped_breakdown.not_eligible ?? 0}, other {run.skipped_breakdown.other ?? 0}
                 </p>
-                {run.errors.length > 0 ? (
-                  <div className="space-y-1">
-                    <p className="uppercase tracking-[0.08em] text-neutral-500">Errors</p>
-                    <ul className="space-y-1">
-                      {run.errors.slice(-10).map((error, index) => (
-                        <li
-                          key={`${run.id}-${error.invoiceId}-${index}`}
-                          className="rounded border border-neutral-300 bg-white px-2 py-1 dark:border-neutral-700 dark:bg-neutral-950"
-                        >
-                          {error.invoiceId}: {error.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
               </div>
             </details>
           ))}
@@ -986,7 +934,6 @@ export default function RemindersPanel({
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(items[0]?.invoiceId ?? '');
   const [runMessage, setRunMessage] = useState('');
   const [dryRun, setDryRun] = useState(false);
-  const [latestRunResult, setLatestRunResult] = useState<ReminderRunResult | null>(null);
   const [recentRuns, setRecentRuns] = useState<ReminderRunRecord[]>([]);
   const [recentRunsLoading, setRecentRunsLoading] = useState(true);
   const [recentRunsError, setRecentRunsError] = useState('');
@@ -1072,7 +1019,6 @@ export default function RemindersPanel({
     }
 
     setRunMessage('');
-    setLatestRunResult(null);
     startRunTransition(async () => {
       try {
         const response = await fetch('/api/reminders/run', {
@@ -1117,22 +1063,6 @@ export default function RemindersPanel({
             ? `Dry run finished. Would send ${summary?.wouldSendCount ?? sentCount}, skipped ${skippedCount}, errors ${errorCount}.`
             : `Run finished. Sent ${sentCount}, skipped ${skippedCount}, errors ${errorCount}.`,
         );
-        setLatestRunResult({
-          ranAt: payload?.ranAt ?? new Date().toISOString(),
-          dryRun: isDryRunResponse,
-          durationMs: payload?.durationMs ?? 0,
-          summary: {
-            sentCount,
-            skippedCount,
-            errorCount,
-            skippedBreakdown: summary?.skippedBreakdown ?? {},
-            wouldSendCount: summary?.wouldSendCount,
-          },
-          errors: Array.isArray(payload?.errors) ? payload!.errors : [],
-          runLogWritten: Boolean(payload?.runLogWritten),
-          runLogWarning: payload?.runLogWarning ?? null,
-        });
-
         try {
           const runsResponse = await fetch('/api/settings/reminders/runs', {
             method: 'GET',
@@ -1297,7 +1227,6 @@ export default function RemindersPanel({
             runs={recentRuns}
             loading={recentRunsLoading}
             errorMessage={recentRunsError}
-            latestResult={latestRunResult}
           />
         </div>
       </div>

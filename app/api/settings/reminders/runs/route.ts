@@ -28,7 +28,21 @@ export async function GET() {
       );
     }
     const runs = await listReminderRuns(context.workspaceId, 25);
-    return NextResponse.json({ ok: true, runs });
+    return NextResponse.json({
+      ok: true,
+      runs: runs.map((run) => ({
+        run_id: run.id,
+        ran_at: run.ranAt,
+        source: run.triggeredBy,
+        dry_run: run.dryRun,
+        attempted: run.attemptedCount,
+        sent: run.dryRun ? 0 : run.sentCount,
+        skipped: run.skippedCount,
+        errors: run.errorCount,
+        duration_ms: run.durationMs,
+        skipped_breakdown: run.skippedBreakdown ?? {},
+      })),
+    });
   } catch (error) {
     if (isTeamMigrationRequiredError(error) || isReminderRunsMigrationRequiredError(error)) {
       return NextResponse.json(

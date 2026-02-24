@@ -105,6 +105,7 @@ type RunLogScope = {
 };
 
 type WorkspaceAccumulator = {
+  attemptedCount: number;
   sentCount: number;
   skippedCount: number;
   errorCount: number;
@@ -246,6 +247,7 @@ function getWorkspaceAccumulator(
   }
 
   const created: WorkspaceAccumulator = {
+    attemptedCount: 0,
     sentCount: 0,
     skippedCount: 0,
     errorCount: 0,
@@ -714,11 +716,11 @@ async function runReminderJob(req: Request) {
       onItem: async (reminder) => {
         const workspaceAccumulator = getWorkspaceAccumulator(workspaceStats, reminder.workspace_id);
         const customerEmail = reminder.customer_email?.trim() ?? '';
+        if (workspaceAccumulator) {
+          workspaceAccumulator.attemptedCount += 1;
+        }
 
         if (dryRun) {
-          if (workspaceAccumulator) {
-            workspaceAccumulator.sentCount += 1;
-          }
           return;
         }
 
@@ -849,6 +851,7 @@ async function runReminderJob(req: Request) {
             insertReminderRun(workspaceId, {
               triggeredBy,
               dryRun,
+              attemptedCount: stats.attemptedCount,
               sentCount: stats.sentCount,
               skippedCount: stats.skippedCount,
               errorCount: stats.errorCount,
@@ -870,7 +873,7 @@ async function runReminderJob(req: Request) {
       }
     }
 
-    const sentCount = dryRun ? run.attempted : updatedInvoiceIds.length;
+    const sentCount = updatedInvoiceIds.length;
     const skippedCount =
       decisions.filter((decision) => !decision.willSend).length + concurrentClaimSkips;
     const skippedBreakdown = decisions.reduce<Required<ReminderRunSkippedBreakdown>>(
