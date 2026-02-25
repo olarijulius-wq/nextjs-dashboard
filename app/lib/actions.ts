@@ -20,11 +20,19 @@ import {
 import { initialLoginState, type LoginState } from '@/app/lib/login-state';
 import { logFunnelEvent } from '@/app/lib/funnel-events';
 import { fetchCurrentMonthInvoiceMetricCount } from '@/app/lib/usage';
+import { requireWorkspaceContext } from '@/app/lib/workspace-context';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function nameFromEmail(email: string) {
+  const normalized = normalizeEmail(email);
+  const [localPart] = normalized.split('@');
+  const candidate = localPart?.trim();
+  return candidate || normalized || 'User';
 }
 
 const PENDING_TWO_FACTOR_NONCE_COOKIE = 'pending_2fa_nonce';
@@ -353,8 +361,12 @@ export async function createInvoice(
   }
 
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return {
       ok: false,
@@ -399,6 +411,7 @@ export async function createInvoice(
     select count(*)::text as count
     from invoices
     where lower(user_email) = ${userEmail}
+      and workspace_id = ${workspaceContext.workspaceId}
       and date >= current_date
       and date < (current_date + interval '1 day')
   `;
@@ -438,6 +451,7 @@ export async function createInvoice(
         status,
         date,
         due_date,
+        workspace_id,
         user_email,
         invoice_number
       )
@@ -450,6 +464,7 @@ export async function createInvoice(
         ${status},
         ${date},
         ${dueDate ?? null},
+        ${workspaceContext.workspaceId},
         ${userEmail},
         ${invoiceNumber}
       )
@@ -506,8 +521,12 @@ export async function updateInvoice(
   }
 
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return { message: 'Unauthorized.' };
   }
@@ -527,7 +546,9 @@ export async function updateInvoice(
         platform_fee_amount = 0,
         status = ${status},
         due_date = ${dueDate ?? null}
-      WHERE id = ${id} AND lower(user_email) = ${userEmail}
+      WHERE id = ${id}
+        AND lower(user_email) = ${userEmail}
+        AND workspace_id = ${workspaceContext.workspaceId}
       RETURNING id
     `;
 
@@ -561,8 +582,12 @@ export async function updateInvoiceStatus(
   }
 
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return;
   }
@@ -571,7 +596,9 @@ export async function updateInvoiceStatus(
     const updated = await sql<{ customer_id: string }[]>`
       UPDATE invoices
       SET status = ${newStatus}
-      WHERE id = ${id} AND lower(user_email) = ${userEmail}
+      WHERE id = ${id}
+        AND lower(user_email) = ${userEmail}
+        AND workspace_id = ${workspaceContext.workspaceId}
       RETURNING customer_id
     `;
 
@@ -594,8 +621,12 @@ export async function duplicateInvoice(
   formData: FormData,
 ): Promise<DuplicateInvoiceState> {
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return {
       ok: false,
@@ -625,7 +656,9 @@ export async function duplicateInvoice(
   }[]>`
     select customer_id, amount
     from invoices
-    where id = ${id} and lower(user_email) = ${userEmail}
+    where id = ${id}
+      and lower(user_email) = ${userEmail}
+      and workspace_id = ${workspaceContext.workspaceId}
     limit 1
   `;
 
@@ -660,6 +693,7 @@ export async function duplicateInvoice(
         platform_fee_amount,
         status,
         date,
+        workspace_id,
         user_email,
         invoice_number
       )
@@ -671,6 +705,7 @@ export async function duplicateInvoice(
         0,
         'pending',
         ${date},
+        ${workspaceContext.workspaceId},
         ${userEmail},
         ${invoiceNumber}
       )
@@ -711,11 +746,16 @@ export async function duplicateInvoice(
 }
 
 export async function deleteInvoice(id: string) {
-  const userEmail = await requireUserEmail();
+  const [userEmail, workspaceContext] = await Promise.all([
+    requireUserEmail(),
+    requireWorkspaceContext(),
+  ]);
 
   const deleted = await sql`
     DELETE FROM invoices
-    WHERE id = ${id} AND lower(user_email) = ${userEmail}
+    WHERE id = ${id}
+      AND lower(user_email) = ${userEmail}
+      AND workspace_id = ${workspaceContext.workspaceId}
     RETURNING id
   `;
 
@@ -746,8 +786,12 @@ export async function createCustomer(
   }
 
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return { message: 'Unauthorized.' };
   }
@@ -756,8 +800,8 @@ export async function createCustomer(
 
   try {
     await sql`
-      INSERT INTO customers (name, email, user_email)
-      VALUES (${name}, ${email}, ${userEmail})
+      INSERT INTO customers (name, email, workspace_id, user_email)
+      VALUES (${name}, ${email}, ${workspaceContext.workspaceId}, ${userEmail})
     `;
 
     await logFunnelEvent({
@@ -795,8 +839,12 @@ export async function updateCustomer(
   }
 
   let userEmail: string;
+  let workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
   try {
-    userEmail = await requireUserEmail();
+    [userEmail, workspaceContext] = await Promise.all([
+      requireUserEmail(),
+      requireWorkspaceContext(),
+    ]);
   } catch {
     return { message: 'Unauthorized.' };
   }
@@ -808,7 +856,9 @@ export async function updateCustomer(
     const updated = await sql`
       UPDATE customers
       SET name = ${name}, email = ${email}
-      WHERE id = ${id} AND lower(user_email) = ${userEmail}
+      WHERE id = ${id}
+        AND lower(user_email) = ${userEmail}
+        AND workspace_id = ${workspaceContext.workspaceId}
       RETURNING id
     `;
 
@@ -833,17 +883,24 @@ export async function updateCustomer(
 }
 
 export async function deleteCustomer(id: string) {
-  const userEmail = await requireUserEmail();
+  const [userEmail, workspaceContext] = await Promise.all([
+    requireUserEmail(),
+    requireWorkspaceContext(),
+  ]);
 
   // Optional but recommended: delete invoices for this customer first
   await sql`
     DELETE FROM invoices
-    WHERE customer_id = ${id} AND lower(user_email) = ${userEmail}
+    WHERE customer_id = ${id}
+      AND lower(user_email) = ${userEmail}
+      AND workspace_id = ${workspaceContext.workspaceId}
   `;
 
   const deleted = await sql`
     DELETE FROM customers
-    WHERE id = ${id} AND lower(user_email) = ${userEmail}
+    WHERE id = ${id}
+      AND lower(user_email) = ${userEmail}
+      AND workspace_id = ${workspaceContext.workspaceId}
     RETURNING id
   `;
 
@@ -920,7 +977,7 @@ export async function saveCompanyProfile(
 }
 
 const SignupSchema = z.object({
-  name: z.string().min(1, { message: 'Please enter your name.' }),
+  name: z.string().trim().optional(),
   email: z.string().email({ message: 'Please enter a valid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   termsAccepted: z.literal(true, {
@@ -957,6 +1014,7 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
 
   const { name, email, password } = validated.data;
   const normalizedEmail = normalizeEmail(email);
+  const resolvedName = name?.trim() || nameFromEmail(normalizedEmail);
 
   let userId: string | null = null;
 
@@ -972,7 +1030,7 @@ export async function registerUser(prevState: SignupState, formData: FormData) {
 
     const [inserted] = await sql<{ id: string }[]>`
       insert into users (name, email, password)
-      values (${name}, ${normalizedEmail}, ${password_hash})
+      values (${resolvedName}, ${normalizedEmail}, ${password_hash})
       returning id
     `;
     userId = inserted?.id ?? null;

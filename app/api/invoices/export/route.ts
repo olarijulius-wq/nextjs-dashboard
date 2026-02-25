@@ -4,8 +4,26 @@ import postgres from 'postgres';
 import { auth } from '@/auth';
 import { PLAN_CONFIG, resolveEffectivePlan } from '@/app/lib/config';
 import { enforceRateLimit } from '@/app/lib/security/api-guard';
+import { requireWorkspaceContext } from '@/app/lib/workspace-context';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+
+const TEST_HOOKS_ENABLED =
+  process.env.NODE_ENV === 'test' && process.env.LATELLESS_TEST_MODE === '1';
+export const __testHooksEnabled = TEST_HOOKS_ENABLED;
+
+export const __testHooks = {
+  authOverride: null as (null | (() => Promise<{ user?: { email?: string | null } | null } | null>)),
+  requireWorkspaceContextOverride: null as
+    | (null | (() => Promise<{ userEmail: string; workspaceId: string }>)),
+  enforceRateLimitOverride: null as
+    | (null | ((req: Request, input: {
+      bucket: string;
+      windowSec: number;
+      ipLimit: number;
+      userLimit: number;
+    }, opts: { userKey: string }) => Promise<Response | null>)),
+};
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -23,20 +41,42 @@ function toCsvValue(value: string | number | null | undefined): string {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-
-  if (!session?.user?.email) {
+  const session = TEST_HOOKS_ENABLED
+    ? (__testHooks.authOverride ? await __testHooks.authOverride() : await auth())
+    : await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  let context;
+  try {
+    context = TEST_HOOKS_ENABLED
+      ? (__testHooks.requireWorkspaceContextOverride
+        ? await __testHooks.requireWorkspaceContextOverride()
+        : await requireWorkspaceContext())
+      : await requireWorkspaceContext();
+  } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  const email = normalizeEmail(context.userEmail);
 
-  const email = normalizeEmail(session.user.email);
-
-  const rl = await enforceRateLimit(req, {
-    bucket: 'invoice_export',
-    windowSec: 300,
-    ipLimit: 10,
-    userLimit: 5,
-  }, { userKey: email });
+  const rl = TEST_HOOKS_ENABLED
+    ? (__testHooks.enforceRateLimitOverride
+      ? await __testHooks.enforceRateLimitOverride(req, {
+        bucket: 'invoice_export',
+        windowSec: 300,
+        ipLimit: 10,
+        userLimit: 5,
+      }, { userKey: email })
+      : await enforceRateLimit(req, {
+        bucket: 'invoice_export',
+        windowSec: 300,
+        ipLimit: 10,
+        userLimit: 5,
+      }, { userKey: email }))
+    : await enforceRateLimit(req, {
+      bucket: 'invoice_export',
+      windowSec: 300,
+      ipLimit: 10,
+      userLimit: 5,
+    }, { userKey: email });
   if (rl) return rl;
 
   const userRows = await sql<
@@ -67,6 +107,24 @@ export async function GET(req: Request) {
   }
 
   // Tõmbame kõik Sinu arved + customer info
+  const [scopeMeta] = await sql<{ has_invoices_workspace_id: boolean; has_customers_workspace_id: boolean }[]>`
+    select
+      exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'invoices'
+          and column_name = 'workspace_id'
+      ) as has_invoices_workspace_id,
+      exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'customers'
+          and column_name = 'workspace_id'
+      ) as has_customers_workspace_id
+  `;
+
   const rows = await sql<
     {
       id: string;
@@ -89,6 +147,9 @@ export async function GET(req: Request) {
       on invoices.customer_id = customers.id
      and lower(invoices.user_email) = lower(customers.user_email)
     where lower(invoices.user_email) = ${email}
+      -- Workspace guard: avoid cross-company exports when workspace_id exists.
+      and (${scopeMeta?.has_invoices_workspace_id ?? false} = false or invoices.workspace_id = ${context.workspaceId})
+      and (${scopeMeta?.has_customers_workspace_id ?? false} = false or customers.workspace_id = ${context.workspaceId})
     order by invoices.date desc
   `;
 

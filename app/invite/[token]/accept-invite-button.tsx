@@ -19,7 +19,7 @@ export default function AcceptInviteButton({ token }: AcceptInviteButtonProps) {
     setStatus(null);
 
     startTransition(async () => {
-      const response = await fetch(`/api/settings/team/invite/${token}/accept`, {
+      const response = await fetch(`/api/settings/team/invite/accept/${token}`, {
         method: 'POST',
       });
 

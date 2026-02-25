@@ -46,6 +46,17 @@ pnpm db:migrate
 5. Start the dev server: `pnpm dev` or `npm run dev`
 6. Open http://localhost:3000
 
+## Running tests
+
+Integration isolation tests run against a dedicated Postgres database.
+
+1. Set `POSTGRES_URL_TEST` to your test DB connection string.
+2. Run `pnpm test`.
+
+`pnpm test` automatically maps `POSTGRES_URL_TEST` to `POSTGRES_URL`, runs DB migrations, and executes `tests/isolation.test.ts`.
+
+Set `POSTGRES_URL_TEST` secret in GitHub repo settings.
+
 ## Environment variables
 
 - `POSTGRES_URL`

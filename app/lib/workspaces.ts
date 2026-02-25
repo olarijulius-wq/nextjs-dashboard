@@ -1,12 +1,23 @@
 import crypto from 'crypto';
 import postgres from 'postgres';
 import { auth } from '@/auth';
+import {
+  COMPANY_LIMIT_BY_PLAN,
+  normalizePlan,
+  TEAM_SEAT_LIMIT_BY_PLAN,
+} from '@/app/lib/config';
+import { readCanonicalWorkspacePlanSource } from '@/app/lib/billing-sync';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 export const TEAM_MIGRATION_REQUIRED_CODE = 'TEAM_MIGRATION_REQUIRED';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
 export type InvitableWorkspaceRole = 'admin' | 'member';
+export type WorkspaceInviteStatus =
+  | 'pending'
+  | 'accepted'
+  | 'expired'
+  | 'canceled';
 
 export type WorkspaceMember = {
   userId: string;
@@ -20,6 +31,7 @@ export type WorkspaceInvite = {
   id: string;
   email: string;
   role: InvitableWorkspaceRole;
+  status: WorkspaceInviteStatus;
   token: string;
   expiresAt: string;
   createdAt: string;
@@ -40,13 +52,27 @@ export type WorkspaceMembershipSummary = {
   role: WorkspaceRole;
 };
 
+const COMPANY_NAME_MAX_LENGTH = 80;
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
 function buildWorkspaceName(name: string | null, email: string) {
-  const label = name?.trim() || email.split('@')[0] || 'Workspace';
-  return `${label} workspace`;
+  const label = name?.trim() || email.split('@')[0] || 'Company';
+  return normalizeCompanyName(`${label} company`);
+}
+
+export function normalizeCompanyName(input: string) {
+  return input.replace(/\s+/g, ' ').trim();
+}
+
+export function validateCompanyName(rawName: string) {
+  const name = normalizeCompanyName(rawName);
+  if (name.length < 1 || name.length > COMPANY_NAME_MAX_LENGTH) {
+    throw new Error('invalid_company_name');
+  }
+  return name;
 }
 
 function buildTeamMigrationRequiredError() {
@@ -75,6 +101,7 @@ export async function assertWorkspaceSchemaReady(): Promise<void> {
         wm: string | null;
         wi: string | null;
         has_active_workspace_id: boolean;
+        has_workspace_invites_status: boolean;
       }[]>`
         select
           to_regclass('public.workspaces') as ws,
@@ -86,14 +113,22 @@ export async function assertWorkspaceSchemaReady(): Promise<void> {
             where table_schema = 'public'
               and table_name = 'users'
               and column_name = 'active_workspace_id'
-          ) as has_active_workspace_id
+          ) as has_active_workspace_id,
+          exists (
+            select 1
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'workspace_invites'
+              and column_name = 'status'
+          ) as has_workspace_invites_status
       `;
 
       if (
         !result?.ws ||
         !result?.wm ||
         !result?.wi ||
-        !result?.has_active_workspace_id
+        !result?.has_active_workspace_id ||
+        !result?.has_workspace_invites_status
       ) {
         throw buildTeamMigrationRequiredError();
       }
@@ -196,7 +231,9 @@ export async function ensureWorkspaceContextForCurrentUser(): Promise<WorkspaceC
     from public.workspace_members wm
     join public.workspaces w on w.id = wm.workspace_id
     where wm.user_id = ${user.id}
-    order by w.created_at asc
+    order by
+      case when w.owner_user_id = ${user.id} then 0 else 1 end asc,
+      w.created_at asc
   `;
 
   let resolvedMembership = memberships.find(
@@ -284,6 +321,88 @@ export async function fetchWorkspaceMembershipsForCurrentUser(): Promise<
   }));
 }
 
+export async function countWorkspacesForUser(userId: string): Promise<number> {
+  await assertWorkspaceSchemaReady();
+  const [row] = await sql<{ count: string }[]>`
+    select count(*)::text as count
+    from public.workspace_members
+    where user_id = ${userId}
+  `;
+  return Number.parseInt(row?.count ?? '0', 10) || 0;
+}
+
+export async function createWorkspaceForUser(input: {
+  userId: string;
+  name: string;
+}) {
+  await assertWorkspaceSchemaReady();
+  const normalizedName = validateCompanyName(input.name);
+
+  const [created] = await sql<{ id: string; name: string }[]>`
+    insert into public.workspaces (name, owner_user_id)
+    values (${normalizedName}, ${input.userId})
+    returning id, name
+  `;
+
+  await sql`
+    insert into public.workspace_members (workspace_id, user_id, role)
+    values (${created.id}, ${input.userId}, 'owner')
+    on conflict (workspace_id, user_id)
+    do update set role = 'owner'
+  `;
+
+  await sql`
+    update public.users
+    set active_workspace_id = ${created.id}
+    where id = ${input.userId}
+  `;
+
+  return created;
+}
+
+export async function renameWorkspaceForUser(input: {
+  workspaceId: string;
+  userId: string;
+  name: string;
+}) {
+  await assertWorkspaceSchemaReady();
+  const workspaceId = input.workspaceId.trim();
+  if (!workspaceId) {
+    throw new Error('workspaceId');
+  }
+
+  const normalizedName = validateCompanyName(input.name);
+
+  const [membership] = await sql<{ role: WorkspaceRole }[]>`
+    select wm.role
+    from public.workspace_members wm
+    where wm.workspace_id = ${workspaceId}
+      and wm.user_id = ${input.userId}
+    limit 1
+  `;
+
+  if (!membership) {
+    throw new Error('forbidden');
+  }
+
+  if (membership.role !== 'owner' && membership.role !== 'admin') {
+    throw new Error('forbidden');
+  }
+
+  const [updated] = await sql<{ id: string; name: string }[]>`
+    update public.workspaces
+    set name = ${normalizedName}
+    where id = ${workspaceId}
+    returning id, name
+  `;
+
+  if (!updated) {
+    throw new Error('forbidden');
+  }
+
+  return updated;
+}
+
 export async function setActiveWorkspaceForCurrentUser(workspaceId: string) {
   await assertWorkspaceSchemaReady();
   const user = await requireCurrentUser();
@@ -348,18 +467,29 @@ export async function fetchPendingWorkspaceInvites(
   workspaceId: string,
 ): Promise<WorkspaceInvite[]> {
   await assertWorkspaceSchemaReady();
+  await sql`
+    update public.workspace_invites
+    set status = 'expired'
+    where workspace_id = ${workspaceId}
+      and status = 'pending'
+      and accepted_at is null
+      and expires_at <= now()
+  `;
+
   const rows = await sql<{
     id: string;
     email: string;
     role: InvitableWorkspaceRole;
+    status: WorkspaceInviteStatus;
     token: string;
     expires_at: Date;
     created_at: Date;
     accepted_at: Date | null;
   }[]>`
-    select id, email, role, token, expires_at, created_at, accepted_at
+    select id, email, role, status, token, expires_at, created_at, accepted_at
     from public.workspace_invites
     where workspace_id = ${workspaceId}
+      and status = 'pending'
       and accepted_at is null
       and expires_at > now()
     order by created_at desc
@@ -369,6 +499,7 @@ export async function fetchPendingWorkspaceInvites(
     id: row.id,
     email: normalizeEmail(row.email),
     role: row.role,
+    status: row.status,
     token: row.token,
     expiresAt: row.expires_at.toISOString(),
     createdAt: row.created_at.toISOString(),
@@ -392,6 +523,7 @@ export async function createWorkspaceInvite(input: {
     id: string;
     email: string;
     role: InvitableWorkspaceRole;
+    status: WorkspaceInviteStatus;
     token: string;
     expires_at: Date;
     created_at: Date;
@@ -401,6 +533,7 @@ export async function createWorkspaceInvite(input: {
       workspace_id,
       email,
       role,
+      status,
       token,
       invited_by_user_id,
       expires_at
@@ -409,22 +542,42 @@ export async function createWorkspaceInvite(input: {
       ${input.workspaceId},
       ${normalizedEmail},
       ${input.role},
+      'pending',
       ${token},
       ${input.invitedByUserId},
       now() + make_interval(days => ${expiresInDays})
     )
-    returning id, email, role, token, expires_at, created_at, accepted_at
+    returning id, email, role, status, token, expires_at, created_at, accepted_at
   `;
 
   return {
     id: invite.id,
     email: normalizeEmail(invite.email),
     role: invite.role,
+    status: invite.status,
     token: invite.token,
     expiresAt: invite.expires_at.toISOString(),
     createdAt: invite.created_at.toISOString(),
     acceptedAt: invite.accepted_at ? invite.accepted_at.toISOString() : null,
   };
+}
+
+export async function cancelWorkspaceInvite(input: {
+  workspaceId: string;
+  inviteId: string;
+}) {
+  await assertWorkspaceSchemaReady();
+  const result = await sql`
+    update public.workspace_invites
+    set status = 'canceled'
+    where id = ${input.inviteId}
+      and workspace_id = ${input.workspaceId}
+      and status = 'pending'
+      and accepted_at is null
+    returning id
+  `;
+
+  return result.length > 0;
 }
 
 export async function removeWorkspaceMember(input: {
@@ -436,7 +589,6 @@ export async function removeWorkspaceMember(input: {
     delete from public.workspace_members
     where workspace_id = ${input.workspaceId}
       and user_id = ${input.targetUserId}
-      and role <> 'owner'
     returning workspace_id
   `;
 
@@ -446,7 +598,7 @@ export async function removeWorkspaceMember(input: {
 export async function updateWorkspaceMemberRole(input: {
   workspaceId: string;
   targetUserId: string;
-  role: InvitableWorkspaceRole;
+  role: WorkspaceRole;
 }) {
   await assertWorkspaceSchemaReady();
   const result = await sql`
@@ -454,7 +606,6 @@ export async function updateWorkspaceMemberRole(input: {
     set role = ${input.role}
     where workspace_id = ${input.workspaceId}
       and user_id = ${input.targetUserId}
-      and role <> 'owner'
     returning workspace_id
   `;
 
@@ -469,9 +620,9 @@ export async function fetchInviteByToken(token: string) {
     workspace_name: string;
     email: string;
     role: InvitableWorkspaceRole;
+    status: WorkspaceInviteStatus;
     expires_at: Date;
     accepted_at: Date | null;
-    is_expired: boolean;
   }[]>`
     select
       wi.id,
@@ -479,9 +630,9 @@ export async function fetchInviteByToken(token: string) {
       w.name as workspace_name,
       wi.email,
       wi.role,
+      wi.status,
       wi.expires_at,
-      wi.accepted_at,
-      wi.expires_at <= now() as is_expired
+      wi.accepted_at
     from public.workspace_invites wi
     join public.workspaces w on w.id = wi.workspace_id
     where wi.token = ${token}
@@ -492,15 +643,32 @@ export async function fetchInviteByToken(token: string) {
     return null;
   }
 
+  let resolvedStatus = invite.status;
+  const isExpired =
+    invite.expires_at.getTime() <= Date.now() &&
+    invite.status !== 'accepted' &&
+    invite.status !== 'canceled';
+
+  if (invite.status === 'pending' && isExpired) {
+    await sql`
+      update public.workspace_invites
+      set status = 'expired'
+      where id = ${invite.id}
+        and status = 'pending'
+    `;
+    resolvedStatus = 'expired';
+  }
+
   return {
     id: invite.id,
     workspaceId: invite.workspace_id,
     workspaceName: invite.workspace_name,
     email: normalizeEmail(invite.email),
     role: invite.role,
+    status: resolvedStatus,
     expiresAt: invite.expires_at.toISOString(),
     acceptedAt: invite.accepted_at ? invite.accepted_at.toISOString() : null,
-    isExpired: invite.is_expired,
+    isExpired: isExpired || resolvedStatus === 'expired',
   };
 }
 
@@ -521,8 +689,10 @@ export async function acceptInviteForCurrentUser(token: string) {
     id: string;
     workspace_id: string;
     workspace_name: string;
+    owner_user_id: string;
     email: string;
     role: InvitableWorkspaceRole;
+    status: WorkspaceInviteStatus;
     expires_at: Date;
     accepted_at: Date | null;
   }[]>`
@@ -530,8 +700,10 @@ export async function acceptInviteForCurrentUser(token: string) {
       wi.id,
       wi.workspace_id,
       w.name as workspace_name,
+      w.owner_user_id,
       wi.email,
       wi.role,
+      wi.status,
       wi.expires_at,
       wi.accepted_at
     from public.workspace_invites wi
@@ -543,12 +715,20 @@ export async function acceptInviteForCurrentUser(token: string) {
   if (!invite) {
     return {
       ok: false as const,
-      code: 'INVALID_TOKEN' as const,
-      message: 'Invite link is invalid.',
+      code: 'INVITE_NOT_FOUND' as const,
+      message: 'Invite link was not found.',
     };
   }
 
-  if (invite.accepted_at) {
+  if (invite.status === 'canceled') {
+    return {
+      ok: false as const,
+      code: 'INVITE_CANCELED' as const,
+      message: 'This invite was canceled by the company owner/admin.',
+    };
+  }
+
+  if (invite.accepted_at || invite.status === 'accepted') {
     return {
       ok: false as const,
       code: 'ALREADY_ACCEPTED' as const,
@@ -556,10 +736,18 @@ export async function acceptInviteForCurrentUser(token: string) {
     };
   }
 
-  if (invite.expires_at.getTime() <= Date.now()) {
+  if (invite.status === 'expired' || invite.expires_at.getTime() <= Date.now()) {
+    if (invite.status === 'pending') {
+      await sql`
+        update public.workspace_invites
+        set status = 'expired'
+        where id = ${invite.id}
+          and status = 'pending'
+      `;
+    }
     return {
       ok: false as const,
-      code: 'EXPIRED' as const,
+      code: 'INVITE_EXPIRED' as const,
       message: 'This invite has expired.',
     };
   }
@@ -572,6 +760,49 @@ export async function acceptInviteForCurrentUser(token: string) {
     };
   }
 
+  const [existingMembership] = await sql<{ workspace_id: string }[]>`
+    select workspace_id
+    from public.workspace_members
+    where workspace_id = ${invite.workspace_id}
+      and user_id = ${user.id}
+    limit 1
+  `;
+  const isNewMembership = !existingMembership;
+
+  const planSource = await readCanonicalWorkspacePlanSource({
+    workspaceId: invite.workspace_id,
+    userId: invite.owner_user_id,
+  });
+  const plan = normalizePlan(planSource.value);
+
+  if (isNewMembership) {
+    const seatLimit = TEAM_SEAT_LIMIT_BY_PLAN[plan];
+    const [seatCountRow] = await sql<{ count: string }[]>`
+      select count(*)::text as count
+      from public.workspace_members
+      where workspace_id = ${invite.workspace_id}
+    `;
+    const currentSeats = Number.parseInt(seatCountRow?.count ?? '0', 10) || 0;
+
+    if (Number.isFinite(seatLimit) && currentSeats >= seatLimit) {
+      return {
+        ok: false as const,
+        code: 'SEAT_LIMIT_REACHED' as const,
+        message: `This company has reached the ${seatLimit}-seat limit for the ${plan} plan.`,
+      };
+    }
+
+    const companyLimit = COMPANY_LIMIT_BY_PLAN[plan];
+    const companyCount = await countWorkspacesForUser(user.id);
+    if (Number.isFinite(companyLimit) && companyCount >= companyLimit) {
+      return {
+        ok: false as const,
+        code: 'COMPANY_LIMIT_REACHED' as const,
+        message: `Your ${plan} plan allows up to ${companyLimit} companies.`,
+      };
+    }
+  }
+
   await sql`
     insert into public.workspace_members (workspace_id, user_id, role)
     values (${invite.workspace_id}, ${user.id}, ${invite.role})
@@ -581,8 +812,9 @@ export async function acceptInviteForCurrentUser(token: string) {
 
   await sql`
     update public.workspace_invites
-    set accepted_at = now()
+    set accepted_at = now(), status = 'accepted'
     where id = ${invite.id}
+      and status = 'pending'
       and accepted_at is null
   `;
 

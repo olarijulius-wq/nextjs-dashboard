@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
-  ensureWorkspaceContextForCurrentUser,
   fetchWorkspaceMembers,
   isTeamMigrationRequiredError,
   removeWorkspaceMember,
   TEAM_MIGRATION_REQUIRED_CODE,
   updateWorkspaceMemberRole,
 } from '@/app/lib/workspaces';
+import {
+  isWorkspaceContextError,
+  requireWorkspaceRole,
+} from '@/app/lib/workspace-context';
 import {
   enforceRateLimit,
   parseJsonBody,
@@ -28,9 +31,13 @@ const teamMemberParamsSchema = z
 
 const updateRoleBodySchema = z
   .object({
-    role: z.enum(['admin', 'member']),
+    role: z.enum(['owner', 'admin', 'member']),
   })
   .strict();
+
+function ownerCount(members: Array<{ role: 'owner' | 'admin' | 'member' }>) {
+  return members.filter((member) => member.role === 'owner').length;
+}
 
 export async function DELETE(request: Request, props: RouteProps) {
   const rawParams = await props.params;
@@ -39,14 +46,7 @@ export async function DELETE(request: Request, props: RouteProps) {
   const userId = parsedParams.data.userId;
 
   try {
-    const context = await ensureWorkspaceContextForCurrentUser();
-
-    if (context.userRole !== 'owner' && context.userRole !== 'admin') {
-      return NextResponse.json(
-        { ok: false, message: 'Only workspace owners or admins can remove members.' },
-        { status: 403 },
-      );
-    }
+    const context = await requireWorkspaceRole(['owner', 'admin']);
 
     const rl = await enforceRateLimit(
       request,
@@ -60,13 +60,6 @@ export async function DELETE(request: Request, props: RouteProps) {
     );
     if (rl) return rl;
 
-    if (context.userId === userId) {
-      return NextResponse.json(
-        { ok: false, message: 'You cannot remove yourself.' },
-        { status: 400 },
-      );
-    }
-
     const members = await fetchWorkspaceMembers(context.workspaceId);
     const target = members.find((member) => member.userId === userId);
 
@@ -78,10 +71,17 @@ export async function DELETE(request: Request, props: RouteProps) {
     }
 
     if (target.role === 'owner') {
-      return NextResponse.json(
-        { ok: false, message: 'Owner cannot be removed from the workspace.' },
-        { status: 400 },
-      );
+      const owners = ownerCount(members);
+      if (owners <= 1) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: 'LAST_OWNER_PROTECTED',
+            message: 'Cannot remove the last owner from this company.',
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const removed = await removeWorkspaceMember({
@@ -101,6 +101,17 @@ export async function DELETE(request: Request, props: RouteProps) {
       message: 'Member removed from workspace.',
     });
   } catch (error) {
+    if (isWorkspaceContextError(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'UNAUTHORIZED',
+          message: error.message,
+        },
+        { status: error.status },
+      );
+    }
+
     if (isTeamMigrationRequiredError(error)) {
       return NextResponse.json(
         {
@@ -132,14 +143,7 @@ export async function PATCH(request: Request, props: RouteProps) {
   const role = parsedBody.data.role;
 
   try {
-    const context = await ensureWorkspaceContextForCurrentUser();
-
-    if (context.userRole !== 'owner' && context.userRole !== 'admin') {
-      return NextResponse.json(
-        { ok: false, message: 'Only workspace owners or admins can change roles.' },
-        { status: 403 },
-      );
-    }
+    const context = await requireWorkspaceRole(['owner', 'admin']);
 
     const rl = await enforceRateLimit(
       request,
@@ -153,13 +157,6 @@ export async function PATCH(request: Request, props: RouteProps) {
     );
     if (rl) return rl;
 
-    if (context.userId === userId) {
-      return NextResponse.json(
-        { ok: false, message: 'You cannot change your own role.' },
-        { status: 400 },
-      );
-    }
-
     const members = await fetchWorkspaceMembers(context.workspaceId);
     const target = members.find((member) => member.userId === userId);
 
@@ -170,11 +167,21 @@ export async function PATCH(request: Request, props: RouteProps) {
       );
     }
 
-    if (target.role === 'owner') {
-      return NextResponse.json(
-        { ok: false, message: 'Owner role cannot be changed.' },
-        { status: 400 },
-      );
+    if (target.role === 'owner' && role !== 'owner') {
+      const owners = ownerCount(members);
+      if (owners <= 1) {
+        const isSelf = context.userId === userId;
+        return NextResponse.json(
+          {
+            ok: false,
+            code: 'LAST_OWNER_PROTECTED',
+            message: isSelf
+              ? 'You cannot demote yourself while you are the last owner.'
+              : 'Cannot demote the last owner of this company.',
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const updated = await updateWorkspaceMemberRole({
@@ -195,6 +202,17 @@ export async function PATCH(request: Request, props: RouteProps) {
       message: 'Member role updated.',
     });
   } catch (error) {
+    if (isWorkspaceContextError(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'UNAUTHORIZED',
+          message: error.message,
+        },
+        { status: error.status },
+      );
+    }
+
     if (isTeamMigrationRequiredError(error)) {
       return NextResponse.json(
         {

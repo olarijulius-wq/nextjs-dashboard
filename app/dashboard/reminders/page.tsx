@@ -472,7 +472,7 @@ export default async function RemindersPage() {
         <DashboardPageTitle
           title="Reminders"
           description="Forecast upcoming reminder emails and preview content."
-          meta={`Workspace: ${workspaceContext.workspaceName} · Role: ${workspaceContext.userRole}`}
+          meta={`Company: ${workspaceContext.workspaceName} · Role: ${workspaceContext.userRole}`}
         />
 
         <RemindersPanel

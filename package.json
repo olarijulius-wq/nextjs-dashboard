@@ -5,6 +5,7 @@
     "dev": "next dev --turbopack",
     "start": "next start",
     "lint": "eslint .",
+    "test": "node scripts/run-tests.mjs",
     "seo:check": "node scripts/seo-check.mjs",
     "db:migrate": "node scripts/migrate.mjs"
   },

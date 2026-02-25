@@ -39,7 +39,30 @@ function getInitial(value: string) {
   return initial || '?';
 }
 
-export function AccountMenuItems({ logoutAction, onItemSelect }: AccountMenuItemsProps) {
+export function hasAccountMenuItems(input: {
+  logoutAction?: (() => Promise<void>) | null;
+}) {
+  const hasProfileLink = true;
+  const hasSettingsLink = true;
+  const hasHomepageLink = true;
+  const hasOnboardingLink = true;
+  const hasThemeToggle = true;
+  const hasLogout = typeof input.logoutAction === 'function';
+
+  return (
+    hasProfileLink ||
+    hasSettingsLink ||
+    hasHomepageLink ||
+    hasOnboardingLink ||
+    hasThemeToggle ||
+    hasLogout
+  );
+}
+
+export function AccountMenuItems({
+  logoutAction,
+  onItemSelect,
+}: AccountMenuItemsProps) {
   return (
     <>
       <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-500">
@@ -103,6 +126,7 @@ export default function MobileDrawer({
 }: MobileDrawerProps) {
   const identityLabel = userEmail || 'Account';
   const avatarInitial = getInitial(userEmail || '?');
+  const shouldShowAccountMenu = hasAccountMenuItems({ logoutAction });
 
   useEffect(() => {
     if (!open) return;
@@ -172,28 +196,30 @@ export default function MobileDrawer({
             </nav>
           </div>
 
-          <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10">
-            <details className="group pointer-events-auto relative rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-xl backdrop-blur dark:border-neutral-900 dark:bg-black/95">
-              <summary className="flex h-[52px] w-full cursor-pointer list-none items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 text-left text-sm text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-900 dark:bg-black dark:text-neutral-200 dark:hover:border-neutral-800 dark:hover:bg-neutral-950">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black bg-black text-xs font-semibold text-white dark:border-neutral-700 dark:bg-black dark:text-neutral-200">
-                  {avatarInitial}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <FitTextEmail
-                    email={identityLabel}
-                    className="font-medium text-neutral-900 dark:text-neutral-100"
+          {shouldShowAccountMenu ? (
+            <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10">
+              <details className="group pointer-events-auto relative rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-xl backdrop-blur dark:border-neutral-900 dark:bg-black/95">
+                <summary className="flex h-[52px] w-full cursor-pointer list-none items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 text-left text-sm text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-900 dark:bg-black dark:text-neutral-200 dark:hover:border-neutral-800 dark:hover:bg-neutral-950">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black bg-black text-xs font-semibold text-white dark:border-neutral-700 dark:bg-black dark:text-neutral-200">
+                    {avatarInitial}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <FitTextEmail
+                      email={identityLabel}
+                      className="font-medium text-neutral-900 dark:text-neutral-100"
+                    />
+                  </div>
+                  <ChevronUpIcon className="h-4 w-4 text-neutral-500 transition group-open:rotate-180 dark:text-neutral-400" />
+                </summary>
+                <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl backdrop-blur dark:border-neutral-900 dark:bg-black">
+                  <AccountMenuItems
+                    logoutAction={logoutAction}
+                    onItemSelect={() => onOpenChange(false)}
                   />
                 </div>
-                <ChevronUpIcon className="h-4 w-4 text-neutral-500 transition group-open:rotate-180 dark:text-neutral-400" />
-              </summary>
-              <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl backdrop-blur dark:border-neutral-900 dark:bg-black">
-                <AccountMenuItems
-                  logoutAction={logoutAction}
-                  onItemSelect={() => onOpenChange(false)}
-                />
-              </div>
-            </details>
-          </div>
+              </details>
+            </div>
+          ) : null}
         </div>
       </div>
     </>

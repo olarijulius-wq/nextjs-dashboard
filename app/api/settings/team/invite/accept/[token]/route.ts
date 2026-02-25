@@ -46,8 +46,12 @@ export async function POST(request: Request, props: RouteProps) {
       const status =
         result.code === 'EMAIL_MISMATCH'
           ? 403
-          : result.code === 'EXPIRED' || result.code === 'INVALID_TOKEN'
-            ? 400
+          : result.code === 'INVITE_NOT_FOUND'
+            ? 404
+            : result.code === 'INVITE_EXPIRED' || result.code === 'INVITE_CANCELED'
+              ? 410
+              : result.code === 'INVALID_TOKEN'
+                ? 400
             : 409;
       return NextResponse.json(
         { ok: false, message: result.message, code: result.code },

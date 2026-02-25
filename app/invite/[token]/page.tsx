@@ -42,7 +42,27 @@ export default async function InvitePage(props: InvitePageProps) {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 py-8">
         <div className="w-full max-w-xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-          <p className="text-sm text-red-600 dark:text-red-300">Invite link is invalid.</p>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Invite not found
+          </h1>
+          <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+            This invite link could not be found. Ask the company owner/admin for a new invite.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (invite.status === 'canceled') {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4 py-8">
+        <div className="w-full max-w-xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Invite was canceled
+          </h1>
+          <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+            This invite was canceled by the company owner/admin.
+          </p>
         </div>
       </main>
     );
@@ -74,7 +94,7 @@ export default async function InvitePage(props: InvitePageProps) {
             Invite expired
           </h1>
           <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-            This invite link has expired. Ask the workspace owner for a new invite.
+            This invite link has expired. Ask the company owner for a new invite.
           </p>
         </div>
       </main>
@@ -95,12 +115,12 @@ export default async function InvitePage(props: InvitePageProps) {
     <main className="flex min-h-screen items-center justify-center px-4 py-8">
       <div className="w-full max-w-xl space-y-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-black dark:shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-          Join workspace
+          Join Company {invite.workspaceName}
         </h1>
 
         <div className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
           <p>
-            Workspace: <span className="font-medium">{invite.workspaceName}</span>
+            Company: <span className="font-medium">{invite.workspaceName}</span>
           </p>
           <p>
             Role: <span className="font-medium">{invite.role}</span>

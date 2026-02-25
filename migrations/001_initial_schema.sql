@@ -62,11 +62,17 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   last_reminder_sent_at      timestamptz
 );
 
-ALTER TABLE public.invoices
-  ADD CONSTRAINT IF NOT EXISTS fk_invoices_customer
-  FOREIGN KEY (customer_id)
-  REFERENCES public.customers (id)
-  ON DELETE CASCADE;
+DO $$
+BEGIN
+  ALTER TABLE public.invoices
+    ADD CONSTRAINT fk_invoices_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES public.customers (id)
+    ON DELETE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_email
   ON public.invoices (lower(user_email));

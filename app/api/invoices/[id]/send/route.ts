@@ -7,10 +7,8 @@ import { getEmailBaseUrl } from '@/app/lib/app-url';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { revalidatePath } from 'next/cache';
 import {
-  ensureWorkspaceContextForCurrentUser,
-  isTeamMigrationRequiredError,
-  TEAM_MIGRATION_REQUIRED_CODE,
-} from '@/app/lib/workspaces';
+  requireWorkspaceRole,
+} from '@/app/lib/workspace-context';
 import {
   enforceRateLimit,
   parseQuery,
@@ -19,6 +17,36 @@ import {
 } from '@/app/lib/security/api-guard';
 
 export const runtime = 'nodejs';
+
+const TEST_HOOKS_ENABLED =
+  process.env.NODE_ENV === 'test' && process.env.LATELLESS_TEST_MODE === '1';
+export const __testHooksEnabled = TEST_HOOKS_ENABLED;
+
+export const __testHooks = {
+  authOverride: null as (null | (() => Promise<{ user?: { email?: string | null } | null } | null>)),
+  enforceRateLimitOverride: null as
+    | (null | ((req: Request, input: {
+      bucket: string;
+      windowSec: number;
+      ipLimit: number;
+      userLimit: number;
+    }, opts: { userKey: string }) => Promise<Response | null>)),
+  requireWorkspaceRoleOverride: null as
+    | (null | ((roles: Array<'owner' | 'admin' | 'member'>) => Promise<{ workspaceId: string; role: 'owner' | 'admin' | 'member' }>)),
+  sendInvoiceEmailOverride: null as
+    | (null | ((input: {
+      workspaceId: string;
+      invoiceId: string;
+      invoiceNumber: string | null;
+      amount: number;
+      dueDate: string | null;
+      customerName: string;
+      customerEmail: string;
+      userEmail: string;
+      baseUrl: string;
+    }) => Promise<{ provider: string; sentAt: string }>)),
+  revalidatePathOverride: null as (null | ((path: string) => void)),
+};
 
 const invoiceSendQuerySchema = z
   .object({
@@ -45,19 +73,35 @@ export async function POST(
   req: Request,
   props: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
+  const session = TEST_HOOKS_ENABLED
+    ? (__testHooks.authOverride ? await __testHooks.authOverride() : await auth())
+    : await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   const userEmail = normalizeEmail(session.user.email);
 
-  const rl = await enforceRateLimit(req, {
-    bucket: 'invoice_send',
-    windowSec: 300,
-    ipLimit: 20,
-    userLimit: 10,
-  }, { userKey: userEmail });
+  const rl = TEST_HOOKS_ENABLED
+    ? (__testHooks.enforceRateLimitOverride
+      ? await __testHooks.enforceRateLimitOverride(req, {
+        bucket: 'invoice_send',
+        windowSec: 300,
+        ipLimit: 20,
+        userLimit: 10,
+      }, { userKey: userEmail })
+      : await enforceRateLimit(req, {
+        bucket: 'invoice_send',
+        windowSec: 300,
+        ipLimit: 20,
+        userLimit: 10,
+      }, { userKey: userEmail }))
+    : await enforceRateLimit(req, {
+      bucket: 'invoice_send',
+      windowSec: 300,
+      ipLimit: 20,
+      userLimit: 10,
+    }, { userKey: userEmail });
   if (rl) return rl;
 
   const rawParams = await props.params;
@@ -68,6 +112,36 @@ export async function POST(
   const parsedQuery = parseQuery(invoiceSendQuerySchema, new URL(req.url));
   if (!parsedQuery.ok) return parsedQuery.response;
   const returnTo = sanitizeReturnTo(parsedQuery.data.returnTo ?? null);
+
+  const [workspaceScopeMeta] = await sql<{ has_workspace_id: boolean }[]>`
+    select exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'invoices'
+        and column_name = 'workspace_id'
+    ) as has_workspace_id
+  `;
+
+  let workspaceContext;
+  try {
+    workspaceContext = TEST_HOOKS_ENABLED
+      ? (__testHooks.requireWorkspaceRoleOverride
+        ? await __testHooks.requireWorkspaceRoleOverride(['owner', 'admin'])
+        : await requireWorkspaceRole(['owner', 'admin']))
+      : await requireWorkspaceRole(['owner', 'admin']);
+  } catch (error) {
+    if (error instanceof Error && 'status' in error) {
+      const status = (error as { status?: number }).status;
+      if (status === 401 || status === 403) {
+        return NextResponse.json(
+          { ok: false, code: status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN', error: error.message },
+          { status },
+        );
+      }
+    }
+    throw error;
+  }
 
   const [invoice] = await sql<{
     id: string;
@@ -95,6 +169,8 @@ export async function POST(
       on c.id = i.customer_id
     where i.id = ${params.id}
       and lower(i.user_email) = ${userEmail}
+      -- Workspace guard: block cross-company invoice send by UUID.
+      and (${workspaceScopeMeta?.has_workspace_id ?? false} = false or i.workspace_id = ${workspaceContext.workspaceId})
     limit 1
   `;
 
@@ -126,32 +202,52 @@ export async function POST(
   }
 
   try {
-    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
-    if (workspaceContext.userRole !== 'owner' && workspaceContext.userRole !== 'admin') {
-      return NextResponse.json(
-        { ok: false, code: 'FORBIDDEN', error: 'Only owners or admins can send invoices.' },
-        { status: 403 },
-      );
-    }
-
     const baseUrl = getEmailBaseUrl();
 
-    const sent = await sendInvoiceEmail({
-      workspaceId: workspaceContext.workspaceId,
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoice_number,
-      amount: invoice.amount,
-      dueDate: invoice.due_date,
-      customerName: invoice.customer_name,
-      customerEmail: invoice.customer_email.trim(),
-      userEmail,
-      baseUrl,
-    });
+    const sent = TEST_HOOKS_ENABLED
+      ? (__testHooks.sendInvoiceEmailOverride
+        ? await __testHooks.sendInvoiceEmailOverride({
+          workspaceId: workspaceContext.workspaceId,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoice_number,
+          amount: invoice.amount,
+          dueDate: invoice.due_date,
+          customerName: invoice.customer_name,
+          customerEmail: invoice.customer_email.trim(),
+          userEmail,
+          baseUrl,
+        })
+        : await sendInvoiceEmail({
+          workspaceId: workspaceContext.workspaceId,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoice_number,
+          amount: invoice.amount,
+          dueDate: invoice.due_date,
+          customerName: invoice.customer_name,
+          customerEmail: invoice.customer_email.trim(),
+          userEmail,
+          baseUrl,
+        }))
+      : await sendInvoiceEmail({
+        workspaceId: workspaceContext.workspaceId,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoice_number,
+        amount: invoice.amount,
+        dueDate: invoice.due_date,
+        customerName: invoice.customer_name,
+        customerEmail: invoice.customer_email.trim(),
+        userEmail,
+        baseUrl,
+      });
 
-    revalidatePath('/dashboard/invoices');
-    revalidatePath(`/dashboard/invoices/${invoice.id}`);
-    revalidatePath('/dashboard');
-    revalidatePath('/dashboard/onboarding');
+    const revalidate =
+      TEST_HOOKS_ENABLED && __testHooks.revalidatePathOverride
+        ? __testHooks.revalidatePathOverride
+        : revalidatePath;
+    revalidate('/dashboard/invoices');
+    revalidate(`/dashboard/invoices/${invoice.id}`);
+    revalidate('/dashboard');
+    revalidate('/dashboard/onboarding');
 
     return NextResponse.json({
       ok: true,

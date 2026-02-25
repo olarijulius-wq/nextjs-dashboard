@@ -22,6 +22,20 @@ export type PlanConfig = {
   hasLatePayerAnalytics: boolean;
 };
 
+export const TEAM_SEAT_LIMIT_BY_PLAN: Record<PlanId, number> = {
+  free: 1,
+  solo: 1,
+  pro: 3,
+  studio: 10,
+};
+
+export const COMPANY_LIMIT_BY_PLAN: Record<PlanId, number> = {
+  free: 1,
+  solo: 1,
+  pro: 3,
+  studio: Number.POSITIVE_INFINITY,
+};
+
 export const PLAN_CONFIG: Record<PlanId, PlanConfig> = {
   free: {
     id: 'free',

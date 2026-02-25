@@ -28,6 +28,13 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function nameFromEmail(email: string) {
+  const normalized = normalizeEmail(email);
+  const [localPart] = normalized.split('@');
+  const candidate = localPart?.trim();
+  return candidate || normalized || 'User';
+}
+
 function mapUserRowToAdapterUser(user?: {
   id: string;
   name: string | null;
@@ -51,7 +58,7 @@ function PostgresAuthAdapter(): Adapter {
       }
 
       const normalizedEmail = normalizeEmail(user.email);
-      const resolvedName = user.name?.trim() || 'Lateless User';
+      const resolvedName = user.name?.trim() || nameFromEmail(normalizedEmail);
       const placeholderPasswordHash = await bcrypt.hash(
         `${crypto.randomUUID()}:${normalizedEmail}`,
         10,
@@ -628,7 +635,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const resolvedName =
         user.name?.trim() ||
         (typeof nameFromProfile === 'string' ? nameFromProfile.trim() : '') ||
-        'Lateless User';
+        nameFromEmail(email);
 
       try {
         const [existing] = await sql<{

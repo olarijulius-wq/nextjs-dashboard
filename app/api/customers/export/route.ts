@@ -4,30 +4,74 @@ import postgres from 'postgres';
 import { auth } from '@/auth';
 import { PLAN_CONFIG, resolveEffectivePlan } from '@/app/lib/config';
 import { enforceRateLimit } from '@/app/lib/security/api-guard';
+import { requireWorkspaceContext } from '@/app/lib/workspace-context';
 
 export const runtime = 'nodejs';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+
+const TEST_HOOKS_ENABLED =
+  process.env.NODE_ENV === 'test' && process.env.LATELLESS_TEST_MODE === '1';
+export const __testHooksEnabled = TEST_HOOKS_ENABLED;
+
+export const __testHooks = {
+  authOverride: null as (null | (() => Promise<{ user?: { email?: string | null } | null } | null>)),
+  requireWorkspaceContextOverride: null as
+    | (null | (() => Promise<{ userEmail: string; workspaceId: string }>)),
+  enforceRateLimitOverride: null as
+    | (null | ((req: Request, input: {
+      bucket: string;
+      windowSec: number;
+      ipLimit: number;
+      userLimit: number;
+    }, opts: { userKey: string }) => Promise<Response | null>)),
+};
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
+  const session = TEST_HOOKS_ENABLED
+    ? (__testHooks.authOverride ? await __testHooks.authOverride() : await auth())
+    : await auth();
 
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const email = normalizeEmail(session.user.email);
+  let context;
+  try {
+    context = TEST_HOOKS_ENABLED
+      ? (__testHooks.requireWorkspaceContextOverride
+        ? await __testHooks.requireWorkspaceContextOverride()
+        : await requireWorkspaceContext())
+      : await requireWorkspaceContext();
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const email = normalizeEmail(context.userEmail);
 
-  const rl = await enforceRateLimit(req, {
-    bucket: 'customers_export',
-    windowSec: 300,
-    ipLimit: 10,
-    userLimit: 5,
-  }, { userKey: email });
+  const rl = TEST_HOOKS_ENABLED
+    ? (__testHooks.enforceRateLimitOverride
+      ? await __testHooks.enforceRateLimitOverride(req, {
+        bucket: 'customers_export',
+        windowSec: 300,
+        ipLimit: 10,
+        userLimit: 5,
+      }, { userKey: email })
+      : await enforceRateLimit(req, {
+        bucket: 'customers_export',
+        windowSec: 300,
+        ipLimit: 10,
+        userLimit: 5,
+      }, { userKey: email }))
+    : await enforceRateLimit(req, {
+      bucket: 'customers_export',
+      windowSec: 300,
+      ipLimit: 10,
+      userLimit: 5,
+    }, { userKey: email });
   if (rl) return rl;
 
   const userRows = await sql<
@@ -58,12 +102,24 @@ export async function GET(req: Request) {
   }
 
   // Tõmba kõik customers, mis kuuluvad sellele user’ile
+  const [scopeMeta] = await sql<{ has_workspace_id: boolean }[]>`
+    select exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'customers'
+        and column_name = 'workspace_id'
+    ) as has_workspace_id
+  `;
+
   const rows = await sql<
     { id: string; name: string; email: string | null }[]
   >`
     select id, name, email
     from public.customers
     where lower(user_email) = ${email}
+      -- Workspace guard: avoid cross-company exports when workspace_id exists.
+      and (${scopeMeta?.has_workspace_id ?? false} = false or workspace_id = ${context.workspaceId})
     order by name asc
   `;
 

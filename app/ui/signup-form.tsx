@@ -57,7 +57,6 @@ export default function SignupForm({
         <span className="h-px flex-1 bg-zinc-300 dark:bg-white/10" />
       </div>
 
-      <input type="hidden" name="name" value="Lateless User" />
       <input type="hidden" name="callbackUrl" value={callbackUrl ?? ''} />
 
       <div>
