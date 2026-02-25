@@ -16,6 +16,13 @@ jobs:
       POSTGRES_URL: ${{ secrets.POSTGRES_URL_TEST }}
       NODE_ENV: test
       LATELLESS_TEST_MODE: "1"
+      STRIPE_SECRET_KEY: "sk_test_dummy_ci"
+      STRIPE_WEBHOOK_SECRET: "whsec_dummy_ci"
+      PAY_LINK_SECRET: "dummy_ci_secret_32_chars_minimum"
+      REMINDER_CRON_TOKEN: "dummy_ci_token"
+      AUTH_SECRET: "dummy_ci_auth_secret"
+      AUTH_URL: "http://localhost:3000"
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
