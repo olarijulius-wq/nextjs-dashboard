@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import postgres from 'postgres';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import BillingEventsPanel from './billing-events-panel';
@@ -45,7 +45,7 @@ export default async function BillingEventsPage(props: {
   }
 
   if (!isInternalAdminEmail(context.userEmail)) {
-    redirect('/dashboard/settings/billing');
+    redirect('/dashboard/settings');
   }
 
   const q = searchParams?.q?.trim() ?? '';

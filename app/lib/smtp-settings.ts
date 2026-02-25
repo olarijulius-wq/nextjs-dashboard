@@ -430,6 +430,7 @@ async function sendWithResend(input: {
   }
 
   const config = getEffectiveMailConfig({
+    useCase: 'invoice',
     workspaceSettings: input.workspaceSettings
       ? {
           provider: input.workspaceSettings.provider,
@@ -445,7 +446,7 @@ async function sendWithResend(input: {
         }
       : null,
   });
-  const from = buildResendFromHeader(config.fromEmail);
+  const from = buildResendFromHeader(config.fromEmail, 'invoice');
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -507,6 +508,7 @@ async function sendWithSmtp(
   };
   const transporter = nodemailer.createTransport(transportOptions);
   const config = getEffectiveMailConfig({
+    useCase: 'invoice',
     workspaceSettings: {
       provider: settings.provider,
       fromName: settings.from_name,
@@ -519,7 +521,7 @@ async function sendWithSmtp(
     },
   });
   const info = await transporter.sendMail({
-    from: buildMailFromHeader(config.fromEmail, config.fromName),
+    from: buildMailFromHeader(config.fromEmail, config.fromName, 'invoice'),
     replyTo: config.replyTo ?? undefined,
     to,
     subject,

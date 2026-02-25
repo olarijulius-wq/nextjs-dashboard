@@ -1,85 +1,46 @@
 import 'server-only';
 
-import { existsSync } from 'node:fs';
-import path from 'node:path';
+import type { WorkspaceRole } from '@/app/lib/workspaces';
+import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
 
 export type SettingsSection = {
   name: string;
   href: string;
+  kind?: 'base' | 'internal';
 };
 
 type BuildSettingsSectionsInput = {
-  isInternalAdmin: boolean;
-  canViewBillingEvents: boolean;
-  canViewLaunchCheck: boolean;
-  canViewSmokeCheck: boolean;
-  canViewAllChecks: boolean;
-  canViewFunnel: boolean;
-  diagnosticsEnabled: boolean;
+  userEmail: string | null | undefined;
+  userRole: WorkspaceRole;
+  diagnosticsEnabled?: boolean;
 };
 
-function pageExists(relativeDir: string) {
-  return existsSync(path.join(process.cwd(), 'app', 'dashboard', 'settings', relativeDir, 'page.tsx'));
-}
+const BASE_SETTINGS_SECTIONS: SettingsSection[] = [
+  { name: 'Overview', href: '/dashboard/settings', kind: 'base' },
+  { name: 'Usage', href: '/dashboard/settings/usage', kind: 'base' },
+  { name: 'Billing', href: '/dashboard/settings/billing', kind: 'base' },
+  { name: 'Pricing & fees', href: '/dashboard/settings/pricing-fees', kind: 'base' },
+  { name: 'Payouts', href: '/dashboard/settings/payouts', kind: 'base' },
+  { name: 'Refunds', href: '/dashboard/settings/refunds', kind: 'base' },
+  { name: 'Team', href: '/dashboard/settings/team', kind: 'base' },
+  { name: 'Company profile', href: '/dashboard/settings/company-profile', kind: 'base' },
+  { name: 'Email setup', href: '/dashboard/settings/smtp', kind: 'base' },
+  { name: 'Unsubscribe', href: '/dashboard/settings/unsubscribe', kind: 'base' },
+  { name: 'Documents', href: '/dashboard/settings/documents', kind: 'base' },
+];
+
+const INTERNAL_SETTINGS_SECTIONS: SettingsSection[] = [
+  { name: 'Billing events', href: '/dashboard/settings/billing-events', kind: 'internal' },
+  { name: 'Launch readiness', href: '/dashboard/settings/launch-check', kind: 'internal' },
+  { name: 'All checks', href: '/dashboard/settings/all-checks', kind: 'internal' },
+  { name: 'Smoke check', href: '/dashboard/settings/smoke-check', kind: 'internal' },
+  { name: 'Migrations', href: '/dashboard/settings/migrations', kind: 'internal' },
+];
 
 export function buildSettingsSections(input: BuildSettingsSectionsInput): SettingsSection[] {
-  const sections: SettingsSection[] = [
-    { name: 'Usage', href: '/dashboard/settings/usage' },
-    { name: 'Billing', href: '/dashboard/settings/billing' },
-  ];
-
-  if (pageExists('pricing-fees')) {
-    sections.push({ name: 'Pricing & fees', href: '/dashboard/settings/pricing-fees' });
-  }
-  if (pageExists('payouts')) {
-    sections.push({ name: 'Payouts', href: '/dashboard/settings/payouts' });
-  }
-  if (pageExists('refunds')) {
-    sections.push({ name: 'Refunds', href: '/dashboard/settings/refunds' });
-  }
-
-  sections.push(
-    { name: 'Team', href: '/dashboard/settings/team' },
-    { name: 'Company profile', href: '/dashboard/settings/company-profile' },
-    { name: 'Email setup', href: '/dashboard/settings/smtp' },
-    { name: 'Unsubscribe', href: '/dashboard/settings/unsubscribe' },
-    { name: 'Documents', href: '/dashboard/settings/documents' },
-  );
-
-  if (!input.isInternalAdmin) {
+  const sections = [...BASE_SETTINGS_SECTIONS];
+  if (!isInternalAdminEmail(input.userEmail)) {
     return sections;
   }
-
-  if (input.canViewBillingEvents && pageExists('billing-events')) {
-    sections.push({ name: 'Billing events', href: '/dashboard/settings/billing-events' });
-  }
-  if (input.canViewLaunchCheck && pageExists('launch-check')) {
-    sections.push({ name: 'Launch readiness', href: '/dashboard/settings/launch-check' });
-  }
-  if (
-    input.diagnosticsEnabled &&
-    input.canViewAllChecks &&
-    pageExists('all-checks')
-  ) {
-    sections.push({ name: 'All checks', href: '/dashboard/settings/all-checks' });
-  }
-  if (
-    input.diagnosticsEnabled &&
-    input.canViewSmokeCheck &&
-    pageExists('smoke-check')
-  ) {
-    sections.push({ name: 'Smoke check', href: '/dashboard/settings/smoke-check' });
-  }
-  if (
-    input.diagnosticsEnabled &&
-    input.canViewSmokeCheck &&
-    pageExists('migrations')
-  ) {
-    sections.push({ name: 'Migrations', href: '/dashboard/settings/migrations' });
-  }
-  if (input.canViewFunnel && pageExists('funnel')) {
-    sections.push({ name: 'Funnel', href: '/dashboard/settings/funnel' });
-  }
-
-  return sections;
+  return [...sections, ...INTERNAL_SETTINGS_SECTIONS];
 }

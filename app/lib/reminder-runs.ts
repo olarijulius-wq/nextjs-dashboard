@@ -17,7 +17,23 @@ export type ReminderRunSkippedBreakdown = {
 
 export type ReminderRunErrorItem = {
   invoiceId: string;
+  recipientEmail: string;
+  provider: 'resend' | 'smtp' | 'unknown';
+  providerMessageId: string | null;
+  errorCode: string | null;
+  errorType: string | null;
   message: string;
+};
+
+export type ReminderRunItem = {
+  invoiceId: string;
+  recipientEmail: string;
+  provider: 'resend' | 'smtp' | 'unknown';
+  providerMessageId: string | null;
+  status: 'sent' | 'error';
+  errorCode: string | null;
+  errorType: string | null;
+  errorMessage: string | null;
 };
 
 export type ReminderRunInsertPayload = {
@@ -65,7 +81,10 @@ export function isReminderRunsMigrationRequiredError(error: unknown): boolean {
 }
 
 let reminderRunsSchemaReadyPromise: Promise<void> | null = null;
-let reminderRunsSchemaMetaPromise: Promise<{ hasAttemptedCount: boolean }> | null = null;
+let reminderRunsSchemaMetaPromise: Promise<{
+  hasAttemptedCount: boolean;
+  hasRunItemsTable: boolean;
+}> | null = null;
 
 async function getReminderRunsSchemaMeta() {
   if (!reminderRunsSchemaMetaPromise) {
@@ -73,6 +92,7 @@ async function getReminderRunsSchemaMeta() {
       const [result] = await sql<{
         runs: string | null;
         has_attempted_count: boolean;
+        has_run_items_table: boolean;
       }[]>`
         select
           to_regclass('public.workspace_reminder_runs') as runs,
@@ -82,7 +102,8 @@ async function getReminderRunsSchemaMeta() {
             where table_schema = 'public'
               and table_name = 'workspace_reminder_runs'
               and column_name = 'attempted_count'
-          ) as has_attempted_count
+          ) as has_attempted_count,
+          to_regclass('public.workspace_reminder_run_items') is not null as has_run_items_table
       `;
 
       if (!result?.runs) {
@@ -91,6 +112,7 @@ async function getReminderRunsSchemaMeta() {
 
       return {
         hasAttemptedCount: result.has_attempted_count,
+        hasRunItemsTable: result.has_run_items_table,
       };
     })();
   }
@@ -246,6 +268,145 @@ export async function insertReminderRun(
     durationMs: row.duration_ms,
     errors: Array.isArray(row.errors) ? row.errors : [],
   } satisfies ReminderRunRecord;
+}
+
+export async function insertReminderRunItems(input: {
+  runId: string;
+  workspaceId: string;
+  items: ReminderRunItem[];
+}) {
+  const schemaMeta = await getReminderRunsSchemaMeta();
+  if (!schemaMeta.hasRunItemsTable || input.items.length === 0) {
+    return;
+  }
+
+  for (const item of input.items) {
+    await sql`
+      insert into public.workspace_reminder_run_items (
+        run_id,
+        workspace_id,
+        invoice_id,
+        recipient_email,
+        provider,
+        provider_message_id,
+        status,
+        error_code,
+        error_type,
+        error_message
+      )
+      values (
+        ${input.runId},
+        ${input.workspaceId},
+        ${item.invoiceId},
+        ${item.recipientEmail.toLowerCase()},
+        ${item.provider},
+        ${item.providerMessageId},
+        ${item.status},
+        ${item.errorCode},
+        ${item.errorType},
+        ${item.errorMessage}
+      )
+    `;
+  }
+}
+
+export async function applyReminderDeliveryFailureByProviderMessageId(input: {
+  provider: 'resend' | 'smtp' | 'unknown';
+  providerMessageId: string;
+  errorCode: string | null;
+  errorType: string | null;
+  errorMessage: string;
+}) {
+  const schemaMeta = await getReminderRunsSchemaMeta();
+  if (!schemaMeta.hasRunItemsTable) {
+    return { updatedRuns: 0, updatedItems: 0 };
+  }
+
+  const updatedItems = await sql<{
+    run_id: string;
+  }[]>`
+    update public.workspace_reminder_run_items
+    set
+      status = 'error',
+      error_code = ${input.errorCode},
+      error_type = ${input.errorType},
+      error_message = ${input.errorMessage.slice(0, 400)},
+      updated_at = now()
+    where lower(provider) = lower(${input.provider})
+      and lower(provider_message_id) = lower(${input.providerMessageId})
+      and status <> 'error'
+    returning run_id
+  `;
+
+  if (updatedItems.length === 0) {
+    return { updatedRuns: 0, updatedItems: 0 };
+  }
+
+  const runIds = Array.from(new Set(updatedItems.map((row) => row.run_id)));
+
+  for (const runId of runIds) {
+    const [counts] = await sql<{
+      attempted_count: number;
+      sent_count: number;
+      error_count: number;
+    }[]>`
+      select
+        count(*)::int as attempted_count,
+        count(*) filter (where status = 'sent')::int as sent_count,
+        count(*) filter (where status = 'error')::int as error_count
+      from public.workspace_reminder_run_items
+      where run_id = ${runId}
+    `;
+
+    const errorRows = await sql<{
+      invoice_id: string;
+      recipient_email: string;
+      provider: 'resend' | 'smtp' | 'unknown';
+      provider_message_id: string | null;
+      error_code: string | null;
+      error_type: string | null;
+      error_message: string | null;
+    }[]>`
+      select
+        invoice_id,
+        recipient_email,
+        provider,
+        provider_message_id,
+        error_code,
+        error_type,
+        error_message
+      from public.workspace_reminder_run_items
+      where run_id = ${runId}
+        and status = 'error'
+      order by updated_at desc, created_at desc
+      limit 10
+    `;
+
+    const errorSamples = errorRows.map((row) => ({
+      invoiceId: row.invoice_id,
+      recipientEmail: row.recipient_email,
+      provider: row.provider,
+      providerMessageId: row.provider_message_id,
+      errorCode: row.error_code,
+      errorType: row.error_type,
+      message: row.error_message ?? 'Delivery failed.',
+    }));
+
+    await sql`
+      update public.workspace_reminder_runs
+      set
+        attempted_count = ${counts?.attempted_count ?? 0},
+        sent_count = ${counts?.sent_count ?? 0},
+        error_count = ${counts?.error_count ?? 0},
+        errors = ${JSON.stringify(errorSamples)}::jsonb
+      where id = ${runId}
+    `;
+  }
+
+  return {
+    updatedRuns: runIds.length,
+    updatedItems: updatedItems.length,
+  };
 }
 
 export async function listReminderRuns(workspaceId: string, limit = 25) {

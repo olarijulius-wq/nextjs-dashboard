@@ -54,6 +54,9 @@ type ReminderRunSkippedBreakdown = {
 
 type ReminderRunErrorItem = {
   invoiceId: string;
+  recipientEmail?: string;
+  errorCode?: string | null;
+  errorType?: string | null;
   message: string;
 };
 
@@ -66,6 +69,7 @@ type ReminderRunRecord = {
   sent: number;
   skipped: number;
   errors: number;
+  error_items?: ReminderRunErrorItem[];
   duration_ms: number | null;
   skipped_breakdown: ReminderRunSkippedBreakdown;
 };
@@ -755,16 +759,16 @@ function RunResultCard({ run }: { run: ReminderRunRecord }) {
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-neutral-800 md:grid-cols-4 dark:text-neutral-200">
         <p>
-          Attempted: <span className="font-semibold">{run.attempted}</span>
-        </p>
-        <p>
           Sent: <span className="font-semibold">{run.sent}</span>
         </p>
         <p>
-          Skipped: <span className="font-semibold">{run.skipped}</span>
+          Attempted: <span className="font-semibold">{run.attempted}</span>
         </p>
         <p>
           Errors: <span className="font-semibold">{run.errors}</span>
+        </p>
+        <p>
+          Skipped: <span className="font-semibold">{run.skipped}</span>
         </p>
       </div>
       <p className="mt-2 text-xs text-neutral-700 dark:text-neutral-300">Duration: {run.duration_ms ?? 0} ms</p>
@@ -775,6 +779,23 @@ function RunResultCard({ run }: { run: ReminderRunRecord }) {
         <p>Skipped not eligible: {skipped.not_eligible ?? 0}</p>
         <p>Skipped other: {skipped.other ?? 0}</p>
       </div>
+      {run.errors > 0 && (run.error_items?.length ?? 0) > 0 ? (
+        <details className="mt-2 rounded border border-neutral-300 bg-white p-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300">
+          <summary className="cursor-pointer font-medium">
+            Show error details ({Math.min(run.error_items?.length ?? 0, 10)})
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {(run.error_items ?? []).slice(0, 10).map((item, index) => (
+              <li key={`${item.invoiceId}-${item.recipientEmail ?? 'unknown'}-${index}`}>
+                <span className="font-medium">
+                  {item.recipientEmail || item.invoiceId}
+                </span>
+                : {item.message}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </article>
   );
 }
@@ -821,10 +842,7 @@ function RecentRunsCard({
                       {run.dry_run ? 'Dry run' : 'Normal'}
                     </span>
                     <span>{formatTriggeredBy(run.source)}</span>
-                    <span>Attempted {run.attempted}</span>
-                    <span>Sent {run.sent}</span>
-                    <span>Skipped {run.skipped}</span>
-                    <span>Errors {run.errors}</span>
+                    <span>Sent: {run.sent} / Attempted: {run.attempted} / Errors: {run.errors} / Skipped: {run.skipped}</span>
                   </div>
                 </div>
               </summary>
@@ -836,6 +854,15 @@ function RecentRunsCard({
                   {run.skipped_breakdown.missing_email ?? 0}, not eligible{' '}
                   {run.skipped_breakdown.not_eligible ?? 0}, other {run.skipped_breakdown.other ?? 0}
                 </p>
+                {run.errors > 0 && (run.error_items?.length ?? 0) > 0 ? (
+                  <ul className="space-y-1">
+                    {(run.error_items ?? []).slice(0, 10).map((item, index) => (
+                      <li key={`${run.run_id}-${item.invoiceId}-${index}`}>
+                        {item.recipientEmail || item.invoiceId}: {item.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </details>
           ))}
@@ -1033,6 +1060,7 @@ export default function RemindersPanel({
           dryRun?: boolean;
           durationMs?: number;
           summary?: {
+            attempted?: number;
             sentCount?: number;
             skippedCount?: number;
             errorCount?: number;
@@ -1053,6 +1081,7 @@ export default function RemindersPanel({
         }
 
         const summary = payload?.summary;
+        const attemptedCount = summary?.attempted ?? 0;
         const sentCount = summary?.sentCount ?? payload?.updatedCount ?? 0;
         const skippedCount = summary?.skippedCount ?? 0;
         const errorCount = summary?.errorCount ?? 0;
@@ -1060,8 +1089,8 @@ export default function RemindersPanel({
 
         setRunMessage(
           isDryRunResponse
-            ? `Dry run finished. Would send ${summary?.wouldSendCount ?? sentCount}, skipped ${skippedCount}, errors ${errorCount}.`
-            : `Run finished. Sent ${sentCount}, skipped ${skippedCount}, errors ${errorCount}.`,
+            ? `Dry run finished. Would send ${summary?.wouldSendCount ?? 0}, sent 0, attempted 0, skipped ${skippedCount}, errors 0.`
+            : `Run finished. Sent ${sentCount} / Attempted ${attemptedCount} / Errors ${errorCount} / Skipped ${skippedCount}.`,
         );
         try {
           const runsResponse = await fetch('/api/settings/reminders/runs', {

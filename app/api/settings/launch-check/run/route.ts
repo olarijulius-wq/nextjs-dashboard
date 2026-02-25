@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getLaunchCheckAccessContext, runLaunchReadinessChecks } from '@/app/lib/launch-check';
+import {
+  getLaunchCheckAccessDecision,
+  runLaunchReadinessChecks,
+} from '@/app/lib/launch-check';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
+import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
 
 export const runtime = 'nodejs';
 
@@ -13,15 +18,23 @@ function noindexJson(body: unknown, status = 200) {
 }
 
 export async function POST() {
-  const context = await getLaunchCheckAccessContext();
-  if (!context) {
-    return noindexJson({ ok: false, error: 'Not Found' }, 404);
-  }
-
   try {
-    const payload = await runLaunchReadinessChecks(context.userEmail);
+    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    if (!isInternalAdminEmail(workspaceContext.userEmail)) {
+      return noindexJson({ ok: false, error: 'Forbidden' }, 403);
+    }
+
+    const decision = await getLaunchCheckAccessDecision();
+    if (!decision.allowed || !decision.context) {
+      return noindexJson({ ok: false, error: 'Forbidden' }, 403);
+    }
+
+    const payload = await runLaunchReadinessChecks(decision.context.userEmail);
     return noindexJson(payload);
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return noindexJson({ ok: false, error: 'Unauthorized' }, 401);
+    }
     console.error('Launch readiness check failed:', error);
     return noindexJson(
       { ok: false, error: 'Failed to run launch readiness checks.' },

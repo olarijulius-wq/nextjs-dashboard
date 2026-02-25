@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getEffectiveMailConfig, sendInvoiceReminderEmail } from '@/app/lib/email';
+import {
+  hasReminderSenderConfigured,
+  sendInvoiceReminderEmail,
+  type ReminderDeliveryResult,
+} from '@/app/lib/email';
 import { generatePayLink } from '@/app/lib/pay-link';
 import { sendWithThrottle } from '@/app/lib/throttled-batch-sender';
+import { getEmailBaseUrl } from '@/app/lib/app-url';
 import {
   fetchUnsubscribeSettings,
   isRecipientUnsubscribed,
@@ -15,8 +20,10 @@ import {
 } from '@/app/lib/reminder-pauses';
 import {
   assertReminderRunsSchemaReady,
+  insertReminderRunItems,
   insertReminderRun,
   isReminderRunsMigrationRequiredError,
+  type ReminderRunItem,
   type ReminderRunSkippedBreakdown,
   type ReminderRunTriggeredBy,
 } from '@/app/lib/reminder-runs';
@@ -96,6 +103,11 @@ type CandidateDecision = {
 
 type RunErrorItem = {
   invoiceId: string;
+  recipientEmail: string;
+  provider: 'resend' | 'smtp' | 'unknown';
+  providerMessageId: string | null;
+  errorCode: string | null;
+  errorType: string | null;
   message: string;
 };
 
@@ -111,6 +123,7 @@ type WorkspaceAccumulator = {
   errorCount: number;
   skippedBreakdown: Required<ReminderRunSkippedBreakdown>;
   errors: RunErrorItem[];
+  items: ReminderRunItem[];
 };
 
 const emptyBreakdown: Required<ReminderRunSkippedBreakdown> = {
@@ -120,15 +133,6 @@ const emptyBreakdown: Required<ReminderRunSkippedBreakdown> = {
   not_eligible: 0,
   other: 0,
 };
-
-function getBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000')
-  );
-}
 
 // Local smoke tests:
 // curl -i -H "Authorization: Bearer $REMINDER_CRON_TOKEN" http://localhost:3000/api/reminders/run?dryRun=1
@@ -228,6 +232,47 @@ function safeErrorMessage(error: unknown) {
   return 'Unknown error';
 }
 
+function normalizeRunErrorMessage(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return 'Delivery failed.';
+  }
+
+  if (trimmed.startsWith('Resend failed:')) {
+    return trimmed.slice('Resend failed:'.length).trim() || 'Resend rejected the request.';
+  }
+
+  return trimmed.slice(0, 300);
+}
+
+function classifyDeliveryError(input: {
+  reminder: ReminderCandidate;
+  error: unknown;
+  provider: 'resend' | 'smtp' | 'unknown';
+  providerMessageId: string | null;
+}): RunErrorItem {
+  const rawMessage = safeErrorMessage(input.error);
+  const normalizedMessage = normalizeRunErrorMessage(rawMessage);
+  let errorCode: string | null = null;
+  let errorType: string | null = null;
+  const resendPattern = /^([a-z0-9_.-]+):\s*(.+)$/i;
+  const resendMatch = normalizedMessage.match(resendPattern);
+  if (resendMatch) {
+    errorType = resendMatch[1].slice(0, 80).toLowerCase();
+    errorCode = resendMatch[1].slice(0, 80).toUpperCase();
+  }
+
+  return {
+    invoiceId: input.reminder.id,
+    recipientEmail: input.reminder.customer_email?.trim().toLowerCase() ?? '',
+    provider: input.provider,
+    providerMessageId: input.providerMessageId,
+    errorCode,
+    errorType,
+    message: normalizedMessage.slice(0, 300),
+  };
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -253,6 +298,7 @@ function getWorkspaceAccumulator(
     errorCount: 0,
     skippedBreakdown: { ...emptyBreakdown },
     errors: [],
+    items: [],
   };
   workspaceStats.set(workspaceId, created);
   return created;
@@ -506,7 +552,7 @@ async function runReminderJob(req: Request) {
     runLogUserEmail,
     runLogActorEmail,
   } = runOptions;
-  const baseUrl = getBaseUrl();
+  const baseUrl = getEmailBaseUrl();
   const batchSize = parsePositiveInt(process.env.EMAIL_BATCH_SIZE, DEFAULT_EMAIL_BATCH_SIZE);
   const delayMs = parsePositiveInt(process.env.EMAIL_THROTTLE_MS, DEFAULT_EMAIL_THROTTLE_MS);
   const maxRunMs = parsePositiveInt(process.env.EMAIL_MAX_RUN_MS, DEFAULT_EMAIL_MAX_RUN_MS);
@@ -584,7 +630,7 @@ async function runReminderJob(req: Request) {
     const sentByUser = new Map<string, number>();
     let concurrentClaimSkips = 0;
 
-    const senderConfigured = getEffectiveMailConfig().ok;
+    const senderConfigured = hasReminderSenderConfigured();
 
     if (reminders.length === 0) {
       console.log('No overdue invoices found for reminder run.');
@@ -716,9 +762,6 @@ async function runReminderJob(req: Request) {
       onItem: async (reminder) => {
         const workspaceAccumulator = getWorkspaceAccumulator(workspaceStats, reminder.workspace_id);
         const customerEmail = reminder.customer_email?.trim() ?? '';
-        if (workspaceAccumulator) {
-          workspaceAccumulator.attemptedCount += 1;
-        }
 
         if (dryRun) {
           return;
@@ -757,6 +800,10 @@ async function runReminderJob(req: Request) {
             return;
           }
 
+          if (workspaceAccumulator) {
+            workspaceAccumulator.attemptedCount += 1;
+          }
+
           const payLink = generatePayLink(baseUrl, reminder.id);
           const amountLabel = formatAmount(reminder.amount);
           const dueDateLabel = formatDate(reminder.due_date);
@@ -793,7 +840,7 @@ async function runReminderJob(req: Request) {
           <p>Thank you,<br />Lateless</p>
         `;
 
-          await sendInvoiceReminderEmail({
+          const delivery: ReminderDeliveryResult = await sendInvoiceReminderEmail({
             to: customerEmail,
             subject,
             bodyHtml,
@@ -801,6 +848,18 @@ async function runReminderJob(req: Request) {
           });
 
           updatedInvoiceIds.push(reminder.id);
+          if (workspaceAccumulator) {
+            workspaceAccumulator.items.push({
+              invoiceId: reminder.id,
+              recipientEmail: customerEmail.toLowerCase(),
+              provider: delivery.provider,
+              providerMessageId: delivery.messageId,
+              status: 'sent',
+              errorCode: null,
+              errorType: null,
+              errorMessage: null,
+            });
+          }
           const normalizedUserEmail = reminder.user_email.trim().toLowerCase();
           sentByUser.set(
             normalizedUserEmail,
@@ -824,15 +883,27 @@ async function runReminderJob(req: Request) {
           }
 
           console.error('Reminder send failed:', reminder.id, error);
-          const errorItem = {
-            invoiceId: reminder.id,
-            message: safeErrorMessage(error),
-          } satisfies RunErrorItem;
+          const errorItem = classifyDeliveryError({
+            reminder,
+            error,
+            provider: 'resend',
+            providerMessageId: null,
+          });
           errors.push(errorItem);
 
           if (workspaceAccumulator) {
             workspaceAccumulator.errorCount += 1;
             workspaceAccumulator.errors.push(errorItem);
+            workspaceAccumulator.items.push({
+              invoiceId: reminder.id,
+              recipientEmail: customerEmail.toLowerCase(),
+              provider: errorItem.provider,
+              providerMessageId: errorItem.providerMessageId,
+              status: 'error',
+              errorCode: errorItem.errorCode,
+              errorType: errorItem.errorType,
+              errorMessage: errorItem.message,
+            });
           }
           throw error;
         }
@@ -846,7 +917,7 @@ async function runReminderJob(req: Request) {
     if (workspaceStats.size > 0) {
       try {
         await assertReminderRunsSchemaReady();
-        await Promise.all(
+        const insertedRuns = await Promise.all(
           Array.from(workspaceStats.entries()).map(([workspaceId, stats]) =>
             insertReminderRun(workspaceId, {
               triggeredBy,
@@ -862,6 +933,19 @@ async function runReminderJob(req: Request) {
             }),
           ),
         );
+        await Promise.all(
+          insertedRuns.map((runRecord) => {
+            const stats = workspaceStats.get(runRecord.workspaceId);
+            if (!stats || dryRun) {
+              return Promise.resolve();
+            }
+            return insertReminderRunItems({
+              runId: runRecord.id,
+              workspaceId: runRecord.workspaceId,
+              items: stats.items,
+            });
+          }),
+        );
         workspaceRunLogWritten = true;
       } catch (error) {
         if (isReminderRunsMigrationRequiredError(error)) {
@@ -873,7 +957,18 @@ async function runReminderJob(req: Request) {
       }
     }
 
-    const sentCount = updatedInvoiceIds.length;
+    const aggregatedStats = Array.from(workspaceStats.values()).reduce(
+      (acc, stats) => {
+        acc.attempted += stats.attemptedCount;
+        acc.sent += stats.sentCount;
+        acc.errors += stats.errorCount;
+        return acc;
+      },
+      { attempted: 0, sent: 0, errors: 0 },
+    );
+    const sentCount = aggregatedStats.sent;
+    const attemptedCount = aggregatedStats.attempted;
+    const errorCount = aggregatedStats.errors;
     const skippedCount =
       decisions.filter((decision) => !decision.willSend).length + concurrentClaimSkips;
     const skippedBreakdown = decisions.reduce<Required<ReminderRunSkippedBreakdown>>(
@@ -914,7 +1009,7 @@ async function runReminderJob(req: Request) {
     skippedBreakdown.other += concurrentClaimSkips;
 
     console.log(
-      `[reminders] ranAt=${ranAtIso} dryRun=${dryRun} attempted=${run.attempted} sent=${sentCount} skipped=${skippedCount} errors=${errors.length} hasMore=${run.hasMore || hasMoreFromSelection}`,
+      `[reminders] ranAt=${ranAtIso} dryRun=${dryRun} attempted=${attemptedCount} sent=${sentCount} skipped=${skippedCount} errors=${errorCount} hasMore=${run.hasMore || hasMoreFromSelection}`,
     );
 
     const hasMore = run.hasMore || hasMoreFromSelection;
@@ -948,9 +1043,9 @@ async function runReminderJob(req: Request) {
 
     const responsePayload = {
       ranAt: ranAtIso,
-      attempted: run.attempted,
+      attempted: attemptedCount,
       sent: sentCount,
-      failed: run.failed,
+      failed: errorCount,
       skipped: skippedCount,
       hasMore,
       updatedCount: sentCount,
@@ -967,14 +1062,14 @@ async function runReminderJob(req: Request) {
       config: runConfig,
       message: responseMessage,
       summary: {
-        attempted: run.attempted,
+        attempted: attemptedCount,
         sent: sentCount,
-        failed: run.failed,
+        failed: errorCount,
         skipped: skippedCount,
         hasMore,
         sentCount,
         skippedCount,
-        errorCount: errors.length,
+        errorCount,
         skippedBreakdown,
         wouldSendCount: eligibleCount,
       },
@@ -995,9 +1090,9 @@ async function runReminderJob(req: Request) {
             ? runLogActorEmail || authorization.actorEmail
             : null,
         config: runConfig,
-        attempted: run.attempted,
+        attempted: attemptedCount,
         sent: sentCount,
-        failed: run.failed,
+        failed: errorCount,
         skipped: skippedCount,
         hasMore,
         durationMs,

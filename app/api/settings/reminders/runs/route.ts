@@ -39,6 +39,7 @@ export async function GET() {
         sent: run.dryRun ? 0 : run.sentCount,
         skipped: run.skippedCount,
         errors: run.errorCount,
+        error_items: run.errors ?? [],
         duration_ms: run.durationMs,
         skipped_breakdown: run.skippedBreakdown ?? {},
       })),

@@ -6,6 +6,10 @@ type SendInvoiceReminderEmailInput = {
   bodyHtml: string;
   bodyText: string;
 };
+export type ReminderDeliveryResult = {
+  provider: 'resend';
+  messageId: string | null;
+};
 
 export type MailProviderMode = 'resend' | 'smtp';
 
@@ -31,6 +35,10 @@ type MailSettingsLike = {
   smtpUsername?: string | null;
   smtpPasswordPresent?: boolean;
 };
+
+type MailFromUseCase = 'default' | 'reminder' | 'invoice';
+
+let hasWarnedAboutFromEnvConflict = false;
 
 function parseProvider(raw: string | null | undefined): MailProviderMode | null {
   const value = (raw ?? '').trim().toLowerCase();
@@ -66,34 +74,82 @@ function sanitizeFromName(value: string): string {
   return value.replace(/[\r\n<>"]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-export function resolveReminderFromEmail(): string {
-  const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
-  if (mailFrom) return mailFrom;
+function warnOnConflictingFromEnvInDevelopment() {
+  if (hasWarnedAboutFromEnvConflict) return;
+  if (process.env.NODE_ENV === 'production') return;
 
+  const reminderFrom = extractEmailAddress(process.env.REMINDER_FROM_EMAIL);
+  const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
+  if (reminderFrom && mailFrom) {
+    hasWarnedAboutFromEnvConflict = true;
+    console.warn(
+      '[mail] Both REMINDER_FROM_EMAIL and MAIL_FROM_EMAIL are set. Reminder emails use REMINDER_FROM_EMAIL first; invoice emails use MAIL_FROM_EMAIL.',
+    );
+  }
+}
+
+export function resolveReminderFromEmail(): string {
   const reminderFrom = extractEmailAddress(process.env.REMINDER_FROM_EMAIL);
   if (reminderFrom) return reminderFrom;
 
-  return 'noreply@lateless.app';
+  const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
+  if (mailFrom) return mailFrom;
+
+  const isProduction = process.env.NODE_ENV === 'production';
+  throw new Error(
+    isProduction
+      ? 'Reminder sender is not configured in production. Set REMINDER_FROM_EMAIL or MAIL_FROM_EMAIL to a verified-domain sender address.'
+      : 'Reminder sender is not configured. Set REMINDER_FROM_EMAIL or MAIL_FROM_EMAIL to a verified-domain sender address.',
+  );
+}
+
+export function resolveInvoiceFromEmail(): string {
+  const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
+  if (mailFrom) return mailFrom;
+  const isProduction = process.env.NODE_ENV === 'production';
+  throw new Error(
+    isProduction
+      ? 'Invoice sender is not configured in production. Set MAIL_FROM_EMAIL to a verified-domain sender address.'
+      : 'Invoice sender is not configured. Set MAIL_FROM_EMAIL to a verified-domain sender address.',
+  );
+}
+
+export function hasReminderSenderConfigured(): boolean {
+  warnOnConflictingFromEnvInDevelopment();
+  const reminderFrom = extractEmailAddress(process.env.REMINDER_FROM_EMAIL);
+  const mailFrom = extractEmailAddress(process.env.MAIL_FROM_EMAIL);
+  if (reminderFrom || mailFrom) return true;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Reminder sender is not configured in production. Set REMINDER_FROM_EMAIL or MAIL_FROM_EMAIL to a verified-domain sender address.',
+    );
+  }
+  return false;
 }
 
 export function resolveMailFromName(): string {
   return normalizeText(process.env.MAIL_FROM_NAME) || 'Lateless';
 }
 
-export function buildMailFromHeader(fromEmail: string, fromName?: string | null): string {
-  const email = extractEmailAddress(fromEmail) || resolveReminderFromEmail();
+export function buildMailFromHeader(
+  fromEmail: string,
+  fromName?: string | null,
+  useCase: MailFromUseCase = 'default',
+): string {
+  const email =
+    extractEmailAddress(fromEmail) ||
+    (useCase === 'invoice' ? resolveInvoiceFromEmail() : resolveReminderFromEmail());
   const name = sanitizeFromName(normalizeText(fromName));
   if (!name) return email;
   return `${name} <${email}>`;
 }
 
-export function buildResendFromHeader(fromEmail: string): string {
+export function buildResendFromHeader(fromEmail: string, useCase: MailFromUseCase = 'default'): string {
+  warnOnConflictingFromEnvInDevelopment();
   const email =
     extractEmailAddress(fromEmail) ||
-    extractEmailAddress(process.env.MAIL_FROM_EMAIL) ||
-    extractEmailAddress(process.env.REMINDER_FROM_EMAIL) ||
-    'noreply@lateless.app';
-  return buildMailFromHeader(email, resolveMailFromName());
+    (useCase === 'invoice' ? resolveInvoiceFromEmail() : resolveReminderFromEmail());
+  return buildMailFromHeader(email, resolveMailFromName(), useCase);
 }
 
 export function isValidMailFromHeader(value: string): boolean {
@@ -111,15 +167,28 @@ export function isValidMailFromHeader(value: string): boolean {
 
 export function getEffectiveMailConfig(input?: {
   workspaceSettings?: MailSettingsLike | null;
+  useCase?: MailFromUseCase;
 }): EffectiveMailConfig {
   const workspace = input?.workspaceSettings ?? null;
+  const useCase = input?.useCase ?? 'default';
   const envProvider = parseProvider(process.env.EMAIL_PROVIDER);
   const provider = envProvider ?? workspace?.provider ?? 'resend';
 
-  const fromEmail =
-    normalizeEmail(process.env.MAIL_FROM_EMAIL) ||
-    normalizeEmail(workspace?.fromEmail) ||
-    resolveReminderFromEmail();
+  warnOnConflictingFromEnvInDevelopment();
+
+  const resolvedReminderFrom =
+    normalizeEmail(process.env.REMINDER_FROM_EMAIL) || normalizeEmail(process.env.MAIL_FROM_EMAIL);
+  const resolvedInvoiceFrom = normalizeEmail(process.env.MAIL_FROM_EMAIL);
+
+  const fromEmail = (() => {
+    if (useCase === 'invoice') {
+      return resolvedInvoiceFrom;
+    }
+    if (useCase === 'reminder') {
+      return resolvedReminderFrom;
+    }
+    return normalizeEmail(process.env.MAIL_FROM_EMAIL) || normalizeEmail(workspace?.fromEmail);
+  })();
   const fromName =
     normalizeText(process.env.MAIL_FROM_NAME) ||
     normalizeText(workspace?.fromName) ||
@@ -136,7 +205,15 @@ export function getEffectiveMailConfig(input?: {
   const resendKeyPresent = Boolean((process.env.RESEND_API_KEY ?? '').trim());
 
   const problems: string[] = [];
-  if (!normalizeEmail(process.env.MAIL_FROM_EMAIL)) {
+  if (useCase === 'invoice') {
+    if (!resolvedInvoiceFrom) {
+      problems.push('MAIL_FROM_EMAIL missing');
+    }
+  } else if (useCase === 'reminder') {
+    if (!resolvedReminderFrom) {
+      problems.push('REMINDER_FROM_EMAIL and MAIL_FROM_EMAIL missing');
+    }
+  } else if (!normalizeEmail(process.env.MAIL_FROM_EMAIL)) {
     problems.push('MAIL_FROM_EMAIL missing');
   }
   if (provider === 'resend' && !resendKeyPresent) {
@@ -168,16 +245,19 @@ async function sendViaResend(input: {
   bodyHtml: string;
   bodyText: string;
   stubLabel: string;
-}) {
+}): Promise<ReminderDeliveryResult> {
   const apiKey = process.env.RESEND_API_KEY;
 
   if (!apiKey) {
     console.log(input.stubLabel, input.to);
-    return;
+    return {
+      provider: 'resend',
+      messageId: null,
+    };
   }
 
-  const config = getEffectiveMailConfig();
-  const from = buildResendFromHeader(config.fromEmail);
+  const config = getEffectiveMailConfig({ useCase: 'reminder' });
+  const from = buildResendFromHeader(config.fromEmail, 'reminder');
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -195,14 +275,39 @@ async function sendViaResend(input: {
     }),
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Resend failed: ${detail}`);
+  const body = (await response.json().catch(() => null)) as
+    | {
+        id?: unknown;
+        error?: {
+          message?: unknown;
+          name?: unknown;
+        };
+      }
+    | null;
+
+  if (!response.ok || body?.error) {
+    const statusPart = response.ok ? '' : `HTTP ${response.status} `;
+    const messageFromBody =
+      typeof body?.error?.message === 'string' && body.error.message.trim()
+        ? body.error.message.trim()
+        : null;
+    const typeFromBody =
+      typeof body?.error?.name === 'string' && body.error.name.trim()
+        ? body.error.name.trim()
+        : null;
+    const fallback = statusPart ? `${statusPart}request failed` : 'request failed';
+    const summary = [typeFromBody, messageFromBody ?? fallback].filter(Boolean).join(': ');
+    throw new Error(`Resend failed: ${summary}`);
   }
+
+  return {
+    provider: 'resend',
+    messageId: typeof body?.id === 'string' ? body.id : null,
+  };
 }
 
 export async function sendInvoiceReminderEmail(payload: SendInvoiceReminderEmailInput) {
-  await sendViaResend({
+  return sendViaResend({
     to: payload.to,
     subject: payload.subject,
     bodyHtml: payload.bodyHtml,

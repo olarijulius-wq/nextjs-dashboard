@@ -11,6 +11,7 @@ import {
   getReminderRunsSchema,
 } from '@/app/lib/reminder-runs-diagnostics';
 import { enforceRateLimit } from '@/app/lib/security/api-guard';
+import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,9 @@ export async function POST(req: Request) {
     }
 
     const context = await ensureWorkspaceContextForCurrentUser();
+    if (!isInternalAdminEmail(context.userEmail)) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
+    }
     if (context.userRole !== 'owner' && context.userRole !== 'admin') {
       return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
     }

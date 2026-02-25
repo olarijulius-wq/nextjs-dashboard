@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { sql } from '@/app/lib/db';
 import { sendInvoiceEmail } from '@/app/lib/invoice-email';
+import { getEmailBaseUrl } from '@/app/lib/app-url';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { revalidatePath } from 'next/cache';
 import {
@@ -133,11 +134,7 @@ export async function POST(
       );
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : 'http://localhost:3000');
+    const baseUrl = getEmailBaseUrl();
 
     const sent = await sendInvoiceEmail({
       workspaceId: workspaceContext.workspaceId,
