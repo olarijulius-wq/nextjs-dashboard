@@ -96,3 +96,4 @@ Set `POSTGRES_URL_TEST` secret in GitHub repo settings.
 - Login attempts are rate-limited.
 - Reminder job is protected by `REMINDER_CRON_TOKEN`.
 - Stripe webhooks sync subscription state and Stripe Connect status.
+  
