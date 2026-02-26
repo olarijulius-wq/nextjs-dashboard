@@ -52,6 +52,7 @@ async function resetDb() {
   await sql`
     truncate table
       public.invoice_email_logs,
+      public.company_profiles,
       public.invoices,
       public.customers,
       public.workspace_invites,
@@ -220,6 +221,7 @@ async function run() {
     });
 
     const dataModule = await import('@/app/lib/data');
+    const publicBrandingModule = await import('@/app/lib/public-branding');
     const invoiceExportRoute = await import('@/app/api/invoices/export/route');
     const customerExportRoute = await import('@/app/api/customers/export/route');
     const sendInvoiceRoute = await import('@/app/api/invoices/[id]/send/route');
@@ -303,6 +305,32 @@ async function run() {
       assert.equal(invoiceExportRes.status, 200, 'member invoice export should succeed');
       assert.match(invoiceExportCsv, new RegExp(fixtures.invoiceA));
       assert.doesNotMatch(invoiceExportCsv, new RegExp(fixtures.invoiceB));
+    });
+
+    await runCase('public branding resolves by invoice workspace (not user email)', async () => {
+      const fixtures = await seedFixtures();
+
+      await sql`
+        insert into public.company_profiles (
+          user_email,
+          workspace_id,
+          company_name,
+          billing_email
+        )
+        values
+          (${fixtures.userEmail}, ${fixtures.workspaceA}, 'Workspace A Brand', 'billing-a@example.com'),
+          (${fixtures.userEmail}, ${fixtures.workspaceB}, 'Workspace B Brand', 'billing-b@example.com')
+      `;
+
+      const workspaceABranding = await publicBrandingModule.getCompanyProfileForInvoiceWorkspace({
+        invoiceId: fixtures.invoiceA,
+        workspaceId: fixtures.workspaceA,
+        userEmail: fixtures.userEmail,
+      });
+
+      assert.equal(workspaceABranding.companyName, 'Workspace A Brand');
+      assert.equal(workspaceABranding.billingEmail, 'billing-a@example.com');
+      assert.notEqual(workspaceABranding.companyName, 'Workspace B Brand');
     });
 
     await runCase('export isolation (invoices + customers)', async () => {

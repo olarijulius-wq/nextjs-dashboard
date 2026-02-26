@@ -4,6 +4,10 @@ import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatCurrency } from '@/app/lib/utils';
 import { verifyPayToken } from '@/app/lib/pay-link';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
+import {
+  getCompanyProfileForInvoiceWorkspace,
+  MissingInvoiceWorkspaceError,
+} from '@/app/lib/public-branding';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -59,6 +63,8 @@ type PageState =
         description: string | null;
         customer_name: string;
         owner_connect_account_id: string | null;
+        workspace_id: string | null;
+        user_email: string | null;
         merchant_name: string | null;
         billing_email: string | null;
       };
@@ -94,8 +100,8 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
     description: string | null;
     customer_name: string;
     owner_connect_account_id: string | null;
-    merchant_name: string | null;
-    billing_email: string | null;
+    workspace_id: string | null;
+    user_email: string | null;
   }[]>`
     SELECT
       invoices.id,
@@ -111,18 +117,11 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
       invoices.description,
       customers.name AS customer_name,
       users.stripe_connect_account_id AS owner_connect_account_id,
-      company_profile.company_name as merchant_name,
-      company_profile.billing_email as billing_email
+      invoices.workspace_id,
+      invoices.user_email
     FROM invoices
     JOIN customers ON customers.id = invoices.customer_id
     LEFT JOIN users ON lower(users.email) = lower(invoices.user_email)
-    left join lateral (
-      select cp.company_name, cp.billing_email
-      from public.company_profiles cp
-      where lower(cp.user_email) = lower(invoices.user_email)
-      order by cp.updated_at desc
-      limit 1
-    ) company_profile on true
     WHERE invoices.id = ${verification.payload.invoiceId}
     LIMIT 1
   `;
@@ -136,10 +135,33 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
     };
   }
 
+  let branding: Awaited<ReturnType<typeof getCompanyProfileForInvoiceWorkspace>>;
+  try {
+    branding = await getCompanyProfileForInvoiceWorkspace({
+      invoiceId: invoice.id,
+      workspaceId: invoice.workspace_id,
+      userEmail: invoice.user_email,
+    });
+  } catch (error) {
+    if (error instanceof MissingInvoiceWorkspaceError) {
+      return {
+        kind: 'invalid',
+        title: 'Invoice unavailable',
+        description: 'This invoice no longer exists. Please contact the sender for help.',
+        contactEmail: null,
+      };
+    }
+    throw error;
+  }
+
   if (invoice.status === 'paid') {
     return {
       kind: 'paid',
-      invoice,
+      invoice: {
+        ...invoice,
+        merchant_name: branding.companyName,
+        billing_email: branding.billingEmail,
+      },
       isPaidBanner: true,
       isCanceledBanner: false,
     };
@@ -147,7 +169,11 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
 
   return {
     kind: 'ready',
-    invoice,
+    invoice: {
+      ...invoice,
+      merchant_name: branding.companyName,
+      billing_email: branding.billingEmail,
+    },
     isPaidBanner: searchParams?.paid === '1',
     isCanceledBanner: searchParams?.canceled === '1',
   };

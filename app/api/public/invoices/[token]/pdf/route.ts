@@ -7,6 +7,10 @@ import { sql } from '@/app/lib/db';
 import { verifyPayToken } from '@/app/lib/pay-link';
 import { formatDateToLocal } from '@/app/lib/utils';
 import {
+  getCompanyProfileForInvoiceWorkspace,
+  MissingInvoiceWorkspaceError,
+} from '@/app/lib/public-branding';
+import {
   enforceRateLimit,
   parseRouteParams,
   routeTokenParamsSchema,
@@ -114,12 +118,8 @@ export async function GET(
     description: string | null;
     customer_name: string;
     customer_email: string;
-    company_name: string | null;
-    address_line1: string | null;
-    address_line2: string | null;
-    city: string | null;
-    country: string | null;
-    billing_email: string | null;
+    workspace_id: string | null;
+    user_email: string | null;
   }[]>`
     select
       i.id,
@@ -131,27 +131,10 @@ export async function GET(
       i.description,
       c.name as customer_name,
       c.email as customer_email,
-      cp.company_name,
-      cp.address_line1,
-      cp.address_line2,
-      cp.city,
-      cp.country,
-      cp.billing_email
+      i.workspace_id,
+      i.user_email
     from public.invoices i
     join public.customers c on c.id = i.customer_id
-    left join lateral (
-      select
-        company_name,
-        address_line1,
-        address_line2,
-        city,
-        country,
-        billing_email
-      from public.company_profiles
-      where lower(user_email) = lower(i.user_email)
-      order by updated_at desc
-      limit 1
-    ) cp on true
     where i.id = ${verification.payload.invoiceId}
     limit 1
   `;
@@ -160,11 +143,25 @@ export async function GET(
     return NextResponse.json({ error: 'Invoice not found.' }, { status: 404 });
   }
 
+  let branding: Awaited<ReturnType<typeof getCompanyProfileForInvoiceWorkspace>>;
+  try {
+    branding = await getCompanyProfileForInvoiceWorkspace({
+      invoiceId: invoice.id,
+      workspaceId: invoice.workspace_id,
+      userEmail: invoice.user_email,
+    });
+  } catch (error) {
+    if (error instanceof MissingInvoiceWorkspaceError) {
+      return NextResponse.json({ error: 'Invoice not found.' }, { status: 404 });
+    }
+    throw error;
+  }
+
   const companyAddress = [
-    invoice.address_line1,
-    invoice.address_line2,
-    invoice.city,
-    invoice.country,
+    branding.addressLine1,
+    branding.addressLine2,
+    branding.city,
+    branding.country,
   ]
     .map((value) => value?.trim())
     .filter(Boolean)
@@ -173,9 +170,9 @@ export async function GET(
   const pdfBuffer = await buildInvoicePdf({
     invoice,
     company: {
-      companyName: invoice.company_name?.trim() || 'Lateless',
+      companyName: branding.companyName || 'Lateless',
       address: companyAddress,
-      companyEmail: invoice.billing_email?.trim() || '',
+      companyEmail: branding.billingEmail,
     },
   });
   const filenameId = invoice.invoice_number ?? invoice.id;
