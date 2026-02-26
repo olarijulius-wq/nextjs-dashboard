@@ -9,14 +9,23 @@ const alias = JSON.stringify({
   'server-only': path.join(cwd, 'tests', 'shims', 'server-only.ts'),
 });
 
-const result = spawnSync('pnpm', ['-s', 'exec', 'jiti', 'tests/isolation.test.ts'], {
+const testDbUrl = process.env.POSTGRES_URL_TEST?.trim();
+if (!testDbUrl) {
+  console.error('Missing POSTGRES_URL_TEST. Set it before running pnpm test.');
+  process.exit(1);
+}
+
+const result = spawnSync('pnpm', ['exec', 'jiti', 'tests/isolation.test.ts'], {
   stdio: 'inherit',
   cwd,
   env: {
     ...process.env,
-    NODE_ENV: process.env.NODE_ENV || 'test',
+    NODE_ENV: 'test',
     JITI_ALIAS: alias,
-    LATELLESS_TEST_MODE: process.env.LATELLESS_TEST_MODE || '1',
+    LATELLESS_TEST_MODE: '1',
+    POSTGRES_URL_TEST: testDbUrl,
+    POSTGRES_URL: testDbUrl,
+    DATABASE_URL: testDbUrl,
   },
 });
 
@@ -25,5 +34,8 @@ if (result.error) {
   process.exit(1);
 }
 
-const code = result.status ?? 1;
-process.exit(code);
+if (result.signal) {
+  process.kill(process.pid, result.signal);
+}
+
+process.exit(result.status ?? 1);
