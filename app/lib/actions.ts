@@ -257,9 +257,10 @@ async function fetchUserPlan(userEmail: string): Promise<PlanId> {
   return resolveEffectivePlan(user?.plan ?? null, user?.subscription_status ?? null);
 }
 
-async function fetchInvoiceCountThisMonth(userEmail: string) {
+async function fetchInvoiceCountThisMonth(userEmail: string, workspaceId: string | null) {
   const usage = await fetchCurrentMonthInvoiceMetricCount({
     userEmail,
+    workspaceId,
     metric: 'created',
   });
   return usage.count;
@@ -394,7 +395,7 @@ export async function createInvoice(
   const planConfig = PLAN_CONFIG[plan];
 
   if (Number.isFinite(planConfig.maxPerMonth)) {
-    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail);
+    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail, workspaceContext.workspaceId);
 
     if (invoiceCount >= planConfig.maxPerMonth) {
       return {
@@ -639,7 +640,7 @@ export async function duplicateInvoice(
   const planConfig = PLAN_CONFIG[plan];
 
   if (Number.isFinite(planConfig.maxPerMonth)) {
-    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail);
+    const invoiceCount = await fetchInvoiceCountThisMonth(userEmail, workspaceContext.workspaceId);
 
     if (invoiceCount >= planConfig.maxPerMonth) {
       return {

@@ -2,11 +2,11 @@ import postgres from 'postgres';
 import clsx from 'clsx';
 import {
   fetchStripeConnectStatusForUser,
-  requireUserEmail,
   type StripeConnectStatus,
 } from '@/app/lib/data';
 import { formatCurrencySuffix } from '@/app/lib/utils';
 import { RevealOnScroll } from '@/app/ui/motion/reveal';
+import { requireWorkspaceContext } from '@/app/lib/workspace-context';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -34,13 +34,13 @@ function getProgressWidth(pendingAmount: string) {
   return `${Math.round(clamped)}%`;
 }
 
-async function fetchLiveStats(userEmail: string): Promise<LiveStats> {
+async function fetchLiveStats(userEmail: string, workspaceId: string): Promise<LiveStats> {
   try {
     const [pendingRow, reminderRow] = await Promise.all([
       sql<{ pending: string | null }[]>`
         SELECT COALESCE(SUM(amount), 0)::text AS pending
         FROM invoices
-        WHERE lower(user_email) = ${userEmail}
+        WHERE workspace_id = ${workspaceId}
           AND status = 'pending'
           AND date >= date_trunc('week', current_date)::date
           AND date < (date_trunc('week', current_date) + interval '7 day')::date
@@ -48,7 +48,7 @@ async function fetchLiveStats(userEmail: string): Promise<LiveStats> {
       sql<{ queue_count: string | null }[]>`
         SELECT COUNT(*)::text AS queue_count
         FROM invoices
-        WHERE lower(user_email) = ${userEmail}
+        WHERE workspace_id = ${workspaceId}
           AND status = 'pending'
           AND due_date IS NOT NULL
           AND due_date < current_date
@@ -84,9 +84,9 @@ export async function LatelessLiveView() {
   };
 
   try {
-    const userEmail = await requireUserEmail();
+    const { userEmail, workspaceId } = await requireWorkspaceContext();
     const [liveStats, connectStatus] = await Promise.all([
-      fetchLiveStats(userEmail),
+      fetchLiveStats(userEmail, workspaceId),
       fetchStripeConnectStatusForUser(userEmail),
     ]);
     stats = liveStats;
