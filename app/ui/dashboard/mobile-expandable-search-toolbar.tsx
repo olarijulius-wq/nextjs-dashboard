@@ -32,7 +32,7 @@ export default function MobileExpandableSearchToolbar({
   };
 
   return (
-    <div className="mb-4 flex w-full items-center gap-3 md:justify-between">
+    <div className="mb-4 flex w-full items-start gap-3 md:items-center md:justify-between">
       <Search
         placeholder={searchPlaceholder}
         onFocus={handleFocus}
@@ -44,7 +44,7 @@ export default function MobileExpandableSearchToolbar({
       />
       <div
         className={clsx(
-          'items-center gap-2',
+          'items-center gap-2 pt-1 md:pt-0',
           isSearchFocused ? 'hidden md:flex' : 'flex',
         )}
       >
