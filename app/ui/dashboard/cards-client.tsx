@@ -59,7 +59,7 @@ export default function CardsClient({
   return (
     <StaggeredList
       mode="mount"
-      className="contents"
+      className="grid grid-cols-1 gap-6 sm:grid-cols-2"
       itemClassName="h-full"
       stagger={0.08}
     >

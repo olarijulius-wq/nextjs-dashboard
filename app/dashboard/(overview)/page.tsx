@@ -11,7 +11,6 @@ import {
   CardsSkeleton,
 } from '@/app/ui/skeletons';
 import { Metadata } from 'next';
-import { RevealOnMount } from '@/app/ui/motion/reveal';
 import { fetchSetupStateForCurrentUser } from '@/app/lib/setup-state';
 import DashboardSetupCard from '@/app/ui/dashboard/setup-card';
 
@@ -81,18 +80,16 @@ export default async function Page(props: {
 
       <DashboardSetupCard items={setupItems} />
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Suspense
-            fallback={
-              <div className="contents [&>*]:min-h-[150px]">
-                <CardsSkeleton />
-              </div>
-            }
-          >
-            <CardWrapper />
-          </Suspense>
-        </div>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Suspense
+          fallback={
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 [&>*]:min-h-[150px]">
+              <CardsSkeleton />
+            </div>
+          }
+        >
+          <CardWrapper />
+        </Suspense>
 
         <Suspense
           fallback={
@@ -104,41 +101,35 @@ export default async function Page(props: {
       </div>
 
       <div className="space-y-6">
-        <RevealOnMount delay={0.08}>
+        <Suspense
+          fallback={
+            <div className="min-h-[500px]">
+              <RevenueChartSkeleton />
+            </div>
+          }
+        >
+          <RevenueChart />
+        </Suspense>
+
+        <div className="grid gap-6 md:grid-cols-2">
           <Suspense
             fallback={
-              <div className="min-h-[500px]">
-                <RevenueChartSkeleton />
+              <div className="h-full min-h-[420px]">
+                <LatestInvoicesSkeleton />
               </div>
             }
           >
-            <RevenueChart />
+            <LatestInvoices />
           </Suspense>
-        </RevealOnMount>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          <RevealOnMount delay={0.14} className="h-full">
-            <Suspense
-              fallback={
-                <div className="h-full min-h-[420px]">
-                  <LatestInvoicesSkeleton />
-                </div>
-              }
-            >
-              <LatestInvoices />
-            </Suspense>
-          </RevealOnMount>
-          <RevealOnMount delay={0.2} className="h-full">
-            <Suspense
-              fallback={
-                <div className="h-full min-h-[420px]">
-                  <LatestInvoicesSkeleton />
-                </div>
-              }
-            >
-              <LatePayers searchParams={searchParams} />
-            </Suspense>
-          </RevealOnMount>
+          <Suspense
+            fallback={
+              <div className="h-full min-h-[420px]">
+                <LatestInvoicesSkeleton />
+              </div>
+            }
+          >
+            <LatePayers searchParams={searchParams} />
+          </Suspense>
         </div>
       </div>
     </main>
