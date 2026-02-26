@@ -124,6 +124,11 @@ export async function GET(req: Request) {
           and column_name = 'workspace_id'
       ) as has_customers_workspace_id
   `;
+  const workspaceId = context.workspaceId?.trim() || '';
+  const useInvoicesWorkspaceScope =
+    Boolean(scopeMeta?.has_invoices_workspace_id) && workspaceId.length > 0;
+  const useCustomersWorkspaceScope =
+    Boolean(scopeMeta?.has_customers_workspace_id) && workspaceId.length > 0;
 
   const rows = await sql<
     {
@@ -145,11 +150,14 @@ export async function GET(req: Request) {
     from public.invoices
     join public.customers
       on invoices.customer_id = customers.id
-     and lower(invoices.user_email) = lower(customers.user_email)
-    where lower(invoices.user_email) = ${email}
-      -- Workspace guard: avoid cross-company exports when workspace_id exists.
-      and (${scopeMeta?.has_invoices_workspace_id ?? false} = false or invoices.workspace_id = ${context.workspaceId})
-      and (${scopeMeta?.has_customers_workspace_id ?? false} = false or customers.workspace_id = ${context.workspaceId})
+    where (
+      (${useInvoicesWorkspaceScope} = true and invoices.workspace_id = ${workspaceId})
+      or (${useInvoicesWorkspaceScope} = false and lower(invoices.user_email) = ${email})
+    )
+    and (
+      (${useCustomersWorkspaceScope} = true and customers.workspace_id = ${workspaceId})
+      or (${useCustomersWorkspaceScope} = false and lower(customers.user_email) = ${email})
+    )
     order by invoices.date desc
   `;
 

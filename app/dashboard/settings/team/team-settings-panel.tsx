@@ -98,6 +98,13 @@ export default function TeamSettingsPanel({
   const canManage = userRole === 'owner' || userRole === 'admin';
   const ownerCount = members.filter((member) => member.role === 'owner').length;
 
+  function refreshWorkspaceViews() {
+    router.refresh();
+    router.prefetch('/dashboard');
+    router.prefetch('/dashboard/invoices');
+    router.prefetch('/dashboard/customers');
+  }
+
   useEffect(() => {
     setPendingInvites(invites);
   }, [invites]);
@@ -257,7 +264,7 @@ export default function TeamSettingsPanel({
 
       setStatus({ ok: true, message: payload.message ?? 'Invite sent.' });
       setEmail('');
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -280,7 +287,7 @@ export default function TeamSettingsPanel({
 
       setStatus({ ok: true, message: payload.message ?? 'Member removed.' });
       closeActionsMenu();
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -302,7 +309,7 @@ export default function TeamSettingsPanel({
 
       setStatus({ ok: true, message: payload.message ?? 'Member role updated.' });
       closeActionsMenu();
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -328,7 +335,7 @@ export default function TeamSettingsPanel({
         ok: true,
         message: payload.message ?? 'Active team updated.',
       });
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -364,7 +371,7 @@ export default function TeamSettingsPanel({
         message:
           'name' in payload && payload.name ? `Created ${payload.name}.` : 'Company created.',
       });
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -400,7 +407,7 @@ export default function TeamSettingsPanel({
           'name' in payload && payload.name ? `Renamed to ${payload.name}.` : 'Company renamed.',
       });
       setIsRenameModalOpen(false);
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -425,7 +432,7 @@ export default function TeamSettingsPanel({
         currentInvites.filter((invite) => invite.id !== inviteId),
       );
       setStatus({ ok: true, message: payload.message ?? 'Invite canceled.' });
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 

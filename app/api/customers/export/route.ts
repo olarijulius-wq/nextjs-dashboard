@@ -111,15 +111,17 @@ export async function GET(req: Request) {
         and column_name = 'workspace_id'
     ) as has_workspace_id
   `;
+  const workspaceId = context.workspaceId?.trim() || '';
+  const useWorkspaceScope = Boolean(scopeMeta?.has_workspace_id) && workspaceId.length > 0;
 
   const rows = await sql<
     { id: string; name: string; email: string | null }[]
   >`
     select id, name, email
     from public.customers
-    where lower(user_email) = ${email}
-      -- Workspace guard: avoid cross-company exports when workspace_id exists.
-      and (${scopeMeta?.has_workspace_id ?? false} = false or workspace_id = ${context.workspaceId})
+    where
+      (${useWorkspaceScope} = true and workspace_id = ${workspaceId})
+      or (${useWorkspaceScope} = false and lower(user_email) = ${email})
     order by name asc
   `;
 

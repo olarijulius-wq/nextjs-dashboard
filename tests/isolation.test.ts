@@ -10,6 +10,8 @@ type WorkspaceContext = {
 type TestContext = {
   userId: string;
   userEmail: string;
+  teammateUserId: string;
+  teammateUserEmail: string;
   workspaceA: string;
   workspaceB: string;
   customerA: string;
@@ -64,6 +66,7 @@ async function resetDb() {
 
 async function seedFixtures(): Promise<TestContext> {
   const userId = '11111111-1111-4111-8111-111111111111';
+  const teammateUserId = '22222222-2222-4222-8222-222222222222';
   const workspaceA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const workspaceB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   const customerA = 'aaaaaaaa-1111-4111-8111-aaaaaaaa1111';
@@ -71,6 +74,7 @@ async function seedFixtures(): Promise<TestContext> {
   const invoiceA = 'aaaaaaaa-3333-4333-8333-aaaaaaaa3333';
   const invoiceB = 'bbbbbbbb-4444-4444-8444-bbbbbbbb4444';
   const userEmail = 'isolation-owner@example.com';
+  const teammateUserEmail = 'isolation-member@example.com';
 
   await sql`
     insert into public.users (
@@ -92,6 +96,26 @@ async function seedFixtures(): Promise<TestContext> {
       'active'
     )
   `;
+  await sql`
+    insert into public.users (
+      id,
+      name,
+      email,
+      password,
+      is_verified,
+      plan,
+      subscription_status
+    )
+    values (
+      ${teammateUserId},
+      'Isolation Member',
+      ${teammateUserEmail},
+      '$2b$10$uD50r8jflxRQQ6MShwbVVuAVrkMtk0iA0WIMRqjYOEoTP0TO.Zi5q',
+      true,
+      'solo',
+      'active'
+    )
+  `;
 
   await sql`
     insert into public.workspaces (id, name, owner_user_id)
@@ -104,6 +128,7 @@ async function seedFixtures(): Promise<TestContext> {
     insert into public.workspace_members (workspace_id, user_id, role)
     values
       (${workspaceA}, ${userId}, 'owner'),
+      (${workspaceA}, ${teammateUserId}, 'member'),
       (${workspaceB}, ${userId}, 'owner')
   `;
 
@@ -163,6 +188,8 @@ async function seedFixtures(): Promise<TestContext> {
   return {
     userId,
     userEmail,
+    teammateUserId,
+    teammateUserEmail,
     workspaceA,
     workspaceB,
     customerA,
@@ -240,6 +267,42 @@ async function run() {
       assert.equal(invoices[0].id, fixtures.invoiceA);
       assert.equal(customers.length, 1, 'workspace A should only see one customer');
       assert.equal(customers[0].id, fixtures.customerA);
+    });
+
+    await runCase('same-workspace members share listing + export visibility', async () => {
+      const fixtures = await seedFixtures();
+      const workspaceAOwnerContext: WorkspaceContext = {
+        userEmail: fixtures.userEmail,
+        workspaceId: fixtures.workspaceA,
+      };
+      const workspaceAMemberContext: WorkspaceContext = {
+        userEmail: fixtures.teammateUserEmail,
+        workspaceId: fixtures.workspaceA,
+      };
+      const noRateLimit = async () => null;
+
+      dataModule.__testHooks.requireWorkspaceContextOverride = async () => workspaceAOwnerContext;
+      const ownerInvoices = await dataModule.fetchFilteredInvoices('', 1, 'all', 'created_at', 'desc', 25);
+      assert.equal(ownerInvoices.length, 1, 'owner should see workspace A invoice');
+      assert.equal(ownerInvoices[0].id, fixtures.invoiceA);
+
+      dataModule.__testHooks.requireWorkspaceContextOverride = async () => workspaceAMemberContext;
+      const memberInvoices = await dataModule.fetchFilteredInvoices('', 1, 'all', 'created_at', 'desc', 25);
+      assert.equal(memberInvoices.length, 1, 'member should see same workspace A invoice');
+      assert.equal(memberInvoices[0].id, fixtures.invoiceA);
+
+      const memberAuthSession = async () => ({ user: { email: fixtures.teammateUserEmail } });
+      invoiceExportRoute.__testHooks.authOverride = memberAuthSession;
+      invoiceExportRoute.__testHooks.requireWorkspaceContextOverride = async () => workspaceAMemberContext;
+      invoiceExportRoute.__testHooks.enforceRateLimitOverride = noRateLimit;
+
+      const invoiceExportRes = await invoiceExportRoute.GET(
+        new Request('http://localhost/api/invoices/export'),
+      );
+      const invoiceExportCsv = await invoiceExportRes.text();
+      assert.equal(invoiceExportRes.status, 200, 'member invoice export should succeed');
+      assert.match(invoiceExportCsv, new RegExp(fixtures.invoiceA));
+      assert.doesNotMatch(invoiceExportCsv, new RegExp(fixtures.invoiceB));
     });
 
     await runCase('export isolation (invoices + customers)', async () => {

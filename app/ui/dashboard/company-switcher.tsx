@@ -34,6 +34,13 @@ export default function CompanySwitcher({
   const [renameName, setRenameName] = useState(currentCompanyName);
   const canManage = userRole === 'owner' || userRole === 'admin';
 
+  function refreshWorkspaceViews() {
+    router.refresh();
+    router.prefetch('/dashboard');
+    router.prefetch('/dashboard/invoices');
+    router.prefetch('/dashboard/customers');
+  }
+
   useEffect(() => {
     setRenameName(currentCompanyName);
   }, [currentCompanyName]);
@@ -63,7 +70,7 @@ export default function CompanySwitcher({
 
       setStatus({ ok: true, message: payload.message ?? 'Active company updated.' });
       onItemSelect?.();
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -93,7 +100,7 @@ export default function CompanySwitcher({
       setCreateName('');
       setIsCreateOpen(false);
       onItemSelect?.();
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 
@@ -122,7 +129,7 @@ export default function CompanySwitcher({
       });
       setIsRenameOpen(false);
       onItemSelect?.();
-      router.refresh();
+      refreshWorkspaceViews();
     });
   }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import {
   isTeamMigrationRequiredError,
   setActiveWorkspaceForCurrentUser,
@@ -36,6 +37,7 @@ export async function POST(
     if (!parsedParams.ok) return parsedParams.response;
 
     await setActiveWorkspaceForCurrentUser(parsedParams.data.id);
+    revalidatePath('/dashboard', 'layout');
 
     return NextResponse.json({
       ok: true,

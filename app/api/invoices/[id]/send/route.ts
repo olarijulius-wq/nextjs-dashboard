@@ -142,6 +142,8 @@ export async function POST(
     }
     throw error;
   }
+  const workspaceId = workspaceContext.workspaceId?.trim() || '';
+  const useWorkspaceScope = Boolean(workspaceScopeMeta?.has_workspace_id) && workspaceId.length > 0;
 
   const [invoice] = await sql<{
     id: string;
@@ -168,9 +170,10 @@ export async function POST(
     join public.customers c
       on c.id = i.customer_id
     where i.id = ${params.id}
-      and lower(i.user_email) = ${userEmail}
-      -- Workspace guard: block cross-company invoice send by UUID.
-      and (${workspaceScopeMeta?.has_workspace_id ?? false} = false or i.workspace_id = ${workspaceContext.workspaceId})
+      and (
+        (${useWorkspaceScope} = true and i.workspace_id = ${workspaceId})
+        or (${useWorkspaceScope} = false and lower(i.user_email) = ${userEmail})
+      )
     limit 1
   `;
 
