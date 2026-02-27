@@ -29,15 +29,11 @@ function requireTestDatabaseUrl() {
 }
 
 const testDbUrl = requireTestDatabaseUrl();
-process.env.POSTGRES_URL = testDbUrl;
-process.env.DATABASE_URL = testDbUrl;
-process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'test-auth-secret';
-process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
-process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-process.env.PAY_LINK_SECRET = process.env.PAY_LINK_SECRET || 'test-pay-link-secret';
-process.env.NEXT_PUBLIC_APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-process.env.NODE_ENV = 'test';
-process.env.LATELLESS_TEST_MODE = '1';
+process.env.AUTH_SECRET ??= 'test-auth-secret';
+process.env.NEXTAUTH_SECRET ??= process.env.AUTH_SECRET;
+process.env.NEXTAUTH_URL ??= 'http://localhost:3000';
+process.env.PAY_LINK_SECRET ??= 'test-pay-link-secret';
+process.env.NEXT_PUBLIC_APP_URL ??= 'http://localhost:3000';
 
 const sql = postgres(testDbUrl, { ssl: 'require', prepare: false });
 const sqlClients: Array<ReturnType<typeof postgres>> = [sql];
@@ -52,6 +48,7 @@ async function resetDb() {
   await sql`
     truncate table
       public.invoice_email_logs,
+      public.company_profiles,
       public.invoices,
       public.customers,
       public.workspace_invites,
@@ -220,6 +217,7 @@ async function run() {
     });
 
     const dataModule = await import('@/app/lib/data');
+    const publicBrandingModule = await import('@/app/lib/public-branding');
     const invoiceExportRoute = await import('@/app/api/invoices/export/route');
     const customerExportRoute = await import('@/app/api/customers/export/route');
     const sendInvoiceRoute = await import('@/app/api/invoices/[id]/send/route');
@@ -303,6 +301,33 @@ async function run() {
       assert.equal(invoiceExportRes.status, 200, 'member invoice export should succeed');
       assert.match(invoiceExportCsv, new RegExp(fixtures.invoiceA));
       assert.doesNotMatch(invoiceExportCsv, new RegExp(fixtures.invoiceB));
+    });
+
+    await runCase('public branding resolves by invoice workspace (not user email)', async () => {
+      const fixtures = await seedFixtures();
+      const workspaceBUserEmail = fixtures.userEmail.replace('@', '+b@');
+
+      await sql`
+        insert into public.company_profiles (
+          user_email,
+          workspace_id,
+          company_name,
+          billing_email
+        )
+        values
+          (${fixtures.userEmail}, ${fixtures.workspaceA}, 'Workspace A Brand', 'billing-a@example.com'),
+          (${workspaceBUserEmail}, ${fixtures.workspaceB}, 'Workspace B Brand', 'billing-b@example.com')
+      `;
+
+      const workspaceABranding = await publicBrandingModule.getCompanyProfileForInvoiceWorkspace({
+        invoiceId: fixtures.invoiceA,
+        workspaceId: fixtures.workspaceA,
+        userEmail: fixtures.userEmail,
+      });
+
+      assert.equal(workspaceABranding.companyName, 'Workspace A Brand');
+      assert.equal(workspaceABranding.billingEmail, 'billing-a@example.com');
+      assert.notEqual(workspaceABranding.companyName, 'Workspace B Brand');
     });
 
     await runCase('export isolation (invoices + customers)', async () => {
