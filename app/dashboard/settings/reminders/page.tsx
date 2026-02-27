@@ -17,7 +17,7 @@ import {
   type ReminderRunsQueryTriggeredBy,
 } from '@/app/lib/reminder-run-logs';
 import { isSettingsRemindersAdminEmail } from '@/app/lib/admin-gates';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import {
   countBadRows,
   countScopeRuns,
@@ -113,7 +113,7 @@ export default async function RemindersAdminPage(props: {
       redirect('/dashboard/settings');
     }
 
-    if (!isInternalAdminEmail(context.userEmail)) {
+    if (!isInternalAdmin(context.userEmail)) {
       redirect('/dashboard/settings');
     }
 

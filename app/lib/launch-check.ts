@@ -1,7 +1,7 @@
 import postgres from 'postgres';
 import { ensureWorkspaceContextForCurrentUser, type WorkspaceContext } from '@/app/lib/workspaces';
 import { getLaunchCheckAdminEmailDecision } from '@/app/lib/admin-gates';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import { resolveSiteUrlDebug } from '@/app/lib/seo/site-url';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -836,7 +836,7 @@ function isWorkspaceOwnerOrAdmin(role: WorkspaceContext['userRole']) {
 export async function getLaunchCheckAccessDecision(): Promise<LaunchCheckAccessDecision> {
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
-    if (!isInternalAdminEmail(context.userEmail)) {
+    if (!isInternalAdmin(context.userEmail)) {
       return {
         allowed: false,
         reason: `launch-check: ${context.userEmail} is not internal admin`,

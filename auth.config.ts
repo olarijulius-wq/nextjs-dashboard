@@ -1,18 +1,4 @@
 import type { NextAuthConfig } from 'next-auth';
-
-const DIAGNOSTICS_PAGE_PATHS = new Set([
-  '/dashboard/settings/smoke-check',
-  '/dashboard/settings/migrations',
-  '/dashboard/settings/all-checks',
-]);
-
-function isDiagnosticsPagePath(pathname: string) {
-  if (DIAGNOSTICS_PAGE_PATHS.has(pathname)) return true;
-  for (const path of DIAGNOSTICS_PAGE_PATHS) {
-    if (pathname.startsWith(`${path}/`)) return true;
-  }
-  return false;
-}
  
 export const authConfig = {
   pages: {
@@ -25,11 +11,6 @@ export const authConfig = {
       const pathname = nextUrl.pathname;
       const isOnDashboard = pathname.startsWith('/dashboard');
       const isOnAuthPage = pathname.startsWith('/login') || pathname.startsWith('/signup');
-      const isDiagnosticsPage = isDiagnosticsPagePath(pathname);
-
-      if (isDiagnosticsPage) {
-        return true;
-      }
 
       // Protect dashboard
       if (isOnDashboard) {

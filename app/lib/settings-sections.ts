@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { WorkspaceRole } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 export type SettingsSection = {
   name: string;
@@ -39,7 +39,7 @@ const INTERNAL_SETTINGS_SECTIONS: SettingsSection[] = [
 
 export function buildSettingsSections(input: BuildSettingsSectionsInput): SettingsSection[] {
   const sections = [...BASE_SETTINGS_SECTIONS];
-  if (!isInternalAdminEmail(input.userEmail)) {
+  if (!isInternalAdmin(input.userEmail)) {
     return sections;
   }
   return [...sections, ...INTERNAL_SETTINGS_SECTIONS];

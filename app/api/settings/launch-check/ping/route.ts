@@ -4,7 +4,7 @@ import {
   getLaunchCheckPingPayload,
 } from '@/app/lib/launch-check';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 export const runtime = 'nodejs';
 
@@ -20,7 +20,7 @@ function noindexJson(body: unknown, status = 200) {
 export async function GET() {
   try {
     const workspaceContext = await ensureWorkspaceContextForCurrentUser();
-    if (!isInternalAdminEmail(workspaceContext.userEmail)) {
+    if (!isInternalAdmin(workspaceContext.userEmail)) {
       return noindexJson({ ok: false, error: 'Forbidden' }, 403);
     }
 

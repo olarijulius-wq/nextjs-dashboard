@@ -35,7 +35,7 @@ import {
 } from '@/app/lib/billing-dunning';
 import SendRecoveryEmailButton from './send-recovery-email-button';
 import BillingSyncToast from './billing-sync-toast';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -177,7 +177,7 @@ export default async function BillingSettingsPage(props: {
   const plan = normalizePlanId(planSource.value) ?? userPlan;
   const hasWorkspaceAdminRole =
     workspaceContext.userRole === 'owner' || workspaceContext.userRole === 'admin';
-  const canViewInternalBillingDebug = isInternalAdminEmail(workspaceContext.userEmail);
+  const canViewInternalBillingDebug = isInternalAdmin(workspaceContext.userEmail);
   const canRunSelfCheck = hasWorkspaceAdminRole && canViewInternalBillingDebug;
   const showPlanSourceDiagnostics =
     diagnosticsEnabled() && isSettingsRemindersAdminEmail(userEmail);

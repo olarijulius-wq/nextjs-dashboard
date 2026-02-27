@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAbsoluteUrl, getSiteUrl } from '@/app/lib/seo/site-url';
 import { enforceRateLimit } from '@/app/lib/security/api-guard';
 import { requireWorkspaceContext } from '@/app/lib/workspace-context';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 export async function GET(req: Request) {
   let context;
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (!isInternalAdminEmail(context.userEmail)) {
+  if (!isInternalAdmin(context.userEmail)) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
   }
 

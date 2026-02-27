@@ -6,7 +6,7 @@ import {
   isTeamMigrationRequiredError,
 } from '@/app/lib/workspaces';
 import { isReminderManualRunAdmin } from '@/app/lib/reminder-admin';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import type { FunnelEventName } from '@/app/lib/funnel-events';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
@@ -85,7 +85,7 @@ export default async function FunnelSettingsPage() {
     if (!hasWorkspaceAccess) {
       redirect('/dashboard/settings');
     }
-    if (!isInternalAdminEmail(context.userEmail)) {
+    if (!isInternalAdmin(context.userEmail)) {
       redirect('/dashboard/settings');
     }
     canView = isReminderManualRunAdmin(context.userEmail);

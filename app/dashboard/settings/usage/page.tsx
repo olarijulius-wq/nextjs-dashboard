@@ -20,7 +20,7 @@ import {
   ensureWorkspaceContextForCurrentUser,
   isTeamMigrationRequiredError,
 } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 export const metadata: Metadata = {
   title: 'Usage Settings',
@@ -143,7 +143,7 @@ export default async function UsageSettingsPage({
 
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
-    canViewInternalDiagnostics = isInternalAdminEmail(context.userEmail);
+    canViewInternalDiagnostics = isInternalAdmin(context.userEmail);
 
     const capabilities = await getUsageCapabilities();
     hasIssuedMetric = capabilities.hasIssuedMetric;

@@ -224,6 +224,8 @@ async function run() {
     const customerExportRoute = await import('@/app/api/customers/export/route');
     const sendInvoiceRoute = await import('@/app/api/invoices/[id]/send/route');
     const refundRequestRoute = await import('@/app/api/public/invoices/[token]/refund-request/route');
+    const smokeCheckPingRoute = await import('@/app/api/settings/smoke-check/ping/route');
+    const { authConfig } = await import('@/auth.config');
 
     let failures = 0;
 
@@ -249,8 +251,97 @@ async function run() {
         sendInvoiceRoute.__testHooks.requireWorkspaceRoleOverride = null;
         sendInvoiceRoute.__testHooks.sendInvoiceEmailOverride = null;
         sendInvoiceRoute.__testHooks.revalidatePathOverride = null;
+        smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = null;
+        smokeCheckPingRoute.__testHooks.getSmokeCheckAccessDecisionOverride = null;
+        smokeCheckPingRoute.__testHooks.getSmokeCheckPingPayloadOverride = null;
       }
     }
+
+    await runCase('unauthenticated diagnostics dashboard path is denied by auth callback', async () => {
+      const authorized = authConfig.callbacks?.authorized;
+      assert.ok(authorized, 'authorized callback should be defined');
+
+      const result = await authorized?.({
+        auth: null,
+        request: {
+          nextUrl: new URL('http://localhost/dashboard/settings/smoke-check'),
+        },
+      } as never);
+
+      assert.equal(result, false, 'unauthenticated diagnostics dashboard request should be denied');
+    });
+
+    await runCase('authenticated non-internal user is denied diagnostics endpoint', async () => {
+      const previousDiagnosticsEnabled = process.env.DIAGNOSTICS_ENABLED;
+      const previousInternalAdmins = process.env.INTERNAL_ADMIN_EMAILS;
+
+      process.env.DIAGNOSTICS_ENABLED = '1';
+      process.env.INTERNAL_ADMIN_EMAILS = 'internal-admin@example.com';
+
+      try {
+        smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = async () =>
+          ({
+            userEmail: 'member@example.com',
+          }) as never;
+
+        const response = await smokeCheckPingRoute.GET();
+        assert.equal(response.status, 403, 'non-internal diagnostics endpoint request should be denied');
+      } finally {
+        process.env.DIAGNOSTICS_ENABLED = previousDiagnosticsEnabled;
+        process.env.INTERNAL_ADMIN_EMAILS = previousInternalAdmins;
+      }
+    });
+
+    await runCase('unauthenticated diagnostics endpoint is denied', async () => {
+      const previousDiagnosticsEnabled = process.env.DIAGNOSTICS_ENABLED;
+      const previousInternalAdmins = process.env.INTERNAL_ADMIN_EMAILS;
+
+      process.env.DIAGNOSTICS_ENABLED = '1';
+      process.env.INTERNAL_ADMIN_EMAILS = 'internal-admin@example.com';
+
+      try {
+        smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = async () => {
+          throw new Error('Unauthorized');
+        };
+
+        const response = await smokeCheckPingRoute.GET();
+        assert.equal(response.status, 401, 'unauthenticated diagnostics endpoint request should be denied');
+      } finally {
+        process.env.DIAGNOSTICS_ENABLED = previousDiagnosticsEnabled;
+        process.env.INTERNAL_ADMIN_EMAILS = previousInternalAdmins;
+      }
+    });
+
+    await runCase('authenticated internal user is allowed diagnostics endpoint', async () => {
+      const previousDiagnosticsEnabled = process.env.DIAGNOSTICS_ENABLED;
+      const previousInternalAdmins = process.env.INTERNAL_ADMIN_EMAILS;
+
+      process.env.DIAGNOSTICS_ENABLED = '1';
+      process.env.INTERNAL_ADMIN_EMAILS = 'internal-admin@example.com';
+
+      try {
+        smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = async () =>
+          ({
+            userEmail: 'internal-admin@example.com',
+          }) as never;
+        smokeCheckPingRoute.__testHooks.getSmokeCheckAccessDecisionOverride = async () =>
+          ({
+            allowed: true,
+            reason: 'test',
+            context: {} as never,
+          }) as never;
+        smokeCheckPingRoute.__testHooks.getSmokeCheckPingPayloadOverride = async () => ({
+          checks: [],
+          env: {},
+        });
+
+        const response = await smokeCheckPingRoute.GET();
+        assert.equal(response.status, 200, 'internal diagnostics endpoint request should be allowed');
+      } finally {
+        process.env.DIAGNOSTICS_ENABLED = previousDiagnosticsEnabled;
+        process.env.INTERNAL_ADMIN_EMAILS = previousInternalAdmins;
+      }
+    });
 
     await runCase('listing isolation (invoices + customers)', async () => {
       const fixtures = await seedFixtures();

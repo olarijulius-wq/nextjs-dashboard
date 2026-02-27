@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import {
   getSmokeCheckAccessDecision,
   getLatestSmokeCheckRun,
@@ -29,7 +29,7 @@ export default async function SmokeCheckPage() {
     }
     throw error;
   }
-  if (!isInternalAdminEmail(context.userEmail)) {
+  if (!isInternalAdmin(context.userEmail)) {
     redirect('/dashboard/settings');
   }
 

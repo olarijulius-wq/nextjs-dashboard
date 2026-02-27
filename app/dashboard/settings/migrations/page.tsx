@@ -4,7 +4,7 @@ import { diagnosticsEnabled } from '@/app/lib/admin-gates';
 import { getMigrationReport } from '@/app/lib/migration-tracker';
 import { getSmokeCheckAccessDecision } from '@/app/lib/smoke-check';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import { SectionCard } from '@/app/ui/page-layout';
 import MigrationsPanel from './migrations-panel';
 
@@ -26,7 +26,7 @@ export default async function MigrationsPage() {
     }
     throw error;
   }
-  if (!isInternalAdminEmail(context.userEmail)) {
+  if (!isInternalAdmin(context.userEmail)) {
     redirect('/dashboard/settings');
   }
 

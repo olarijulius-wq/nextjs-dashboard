@@ -12,7 +12,7 @@ import {
   getDiagnosticsEnabledState,
   getSmokeCheckAdminEmailDecision,
 } from '@/app/lib/admin-gates';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import {
   SMTP_MIGRATION_REQUIRED_CODE,
   fetchWorkspaceEmailSettings,
@@ -350,7 +350,7 @@ function isWorkspaceOwnerOrAdmin(role: WorkspaceContext['userRole']) {
 export async function getSmokeCheckAccessDecision(): Promise<DiagnosticsAccessDecision> {
   try {
     const context = await ensureWorkspaceContextForCurrentUser();
-    if (!isInternalAdminEmail(context.userEmail)) {
+    if (!isInternalAdmin(context.userEmail)) {
       return {
         allowed: false,
         reason: `smoke-check: ${context.userEmail} is not internal admin`,

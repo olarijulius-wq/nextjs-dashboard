@@ -5,7 +5,7 @@ import {
   runProductionSmokeChecks,
 } from '@/app/lib/smoke-check';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 export const runtime = 'nodejs';
 
@@ -25,7 +25,7 @@ export async function POST() {
 
   try {
     const workspaceContext = await ensureWorkspaceContextForCurrentUser();
-    if (!isInternalAdminEmail(workspaceContext.userEmail)) {
+    if (!isInternalAdmin(workspaceContext.userEmail)) {
       return noindexJson({ ok: false, error: 'Forbidden' }, 403);
     }
 

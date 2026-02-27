@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 import { getLaunchCheckAccessContext, getLatestLaunchCheckRun } from '@/app/lib/launch-check';
 import { PageShell, SectionCard } from '@/app/ui/page-layout';
 import LaunchCheckPanel from './launch-check-panel';
@@ -24,7 +24,7 @@ export default async function LaunchCheckPage() {
     }
     throw error;
   }
-  if (!isInternalAdminEmail(workspaceContext.userEmail)) {
+  if (!isInternalAdmin(workspaceContext.userEmail)) {
     redirect('/dashboard/settings');
   }
 

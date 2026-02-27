@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import postgres from 'postgres';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import BillingEventsPanel from './billing-events-panel';
-import { isInternalAdminEmail } from '@/app/lib/internal-admin-email';
+import { isInternalAdmin } from '@/app/lib/internal-admin-email';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -44,7 +44,7 @@ export default async function BillingEventsPage(props: {
     redirect('/dashboard/settings');
   }
 
-  if (!isInternalAdminEmail(context.userEmail)) {
+  if (!isInternalAdmin(context.userEmail)) {
     redirect('/dashboard/settings');
   }
 
