@@ -3,7 +3,6 @@ import { sql } from '@/app/lib/db';
 import { createInvoiceCheckoutSession } from '@/app/lib/invoice-checkout';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { verifyPayToken } from '@/app/lib/pay-link';
-import { fetchStripeConnectStatusForUser } from '@/app/lib/data';
 import {
   PRICING_FEES_MIGRATION_REQUIRED_CODE,
   isPricingFeesMigrationRequiredError,
@@ -18,6 +17,7 @@ import {
   assertStripeConfig,
   normalizeStripeConfigError,
 } from '@/app/lib/stripe-guard';
+import { resolveStripeWorkspaceBillingForInvoice } from '@/app/lib/invoice-workspace-billing';
 import {
   enforceRateLimit,
   parseRouteParams,
@@ -25,10 +25,6 @@ import {
 } from '@/app/lib/security/api-guard';
 
 export const runtime = 'nodejs';
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
 
 export async function POST(
   req: Request,
@@ -71,7 +67,6 @@ export async function POST(
     status: string;
     invoice_number: string | null;
     customer_email: string | null;
-    user_email: string;
     workspace_id: string | null;
   }[]>`
     SELECT
@@ -80,7 +75,6 @@ export async function POST(
       invoices.status,
       invoices.invoice_number,
       customers.email AS customer_email,
-      invoices.user_email,
       invoices.workspace_id
     FROM invoices
     JOIN customers
@@ -114,17 +108,30 @@ export async function POST(
   const payoutsSetupUrl = '/dashboard/settings/payouts';
 
   try {
+    const billing = await resolveStripeWorkspaceBillingForInvoice(invoice.id);
+    if (!billing) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    if (!billing.workspaceId) {
+      console.warn('[public invoice checkout] workspace_id missing; failing closed', {
+        invoiceId: invoice.id,
+      });
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    if (billing.workspaceId !== invoice.workspace_id) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
     assertStripeConfig();
 
-    const ownerEmail = normalizeEmail(invoice.user_email);
-    const connectStatus = await fetchStripeConnectStatusForUser(ownerEmail);
-    const connectedAccountId = connectStatus.accountId;
+    const connectedAccountId = billing.stripeAccountId;
     if (!connectedAccountId) {
       return NextResponse.json(
         {
           ok: false,
           code: 'CONNECT_REQUIRED',
-          message: "Payments aren't enabled for this merchant yet.",
+          message:
+            'Online payments are not available yet. Ask the invoice owner to connect Stripe payouts.',
         },
         { status: 409 },
       );
@@ -182,8 +189,9 @@ export async function POST(
         amount: invoice.amount,
         invoice_number: invoice.invoice_number,
         customer_email: invoice.customer_email,
-        user_email: ownerEmail,
-        workspace_id: invoice.workspace_id,
+        workspace_id: billing.workspaceId,
+        stripe_account_id: connectedAccountId,
+        stripe_customer_id: billing.stripeCustomerId,
       },
       baseUrl,
       {
@@ -207,6 +215,7 @@ export async function POST(
         stripe_checkout_session_id = ${checkoutSession.id},
         stripe_payment_intent_id = coalesce(${paymentIntentId}, stripe_payment_intent_id)
       WHERE id = ${invoice.id}
+        AND workspace_id = ${billing.workspaceId}
       RETURNING id
     `;
     if (process.env.NODE_ENV !== 'production') {
