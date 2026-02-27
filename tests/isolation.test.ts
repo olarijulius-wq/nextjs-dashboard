@@ -305,6 +305,7 @@ async function run() {
 
     await runCase('public branding resolves by invoice workspace (not user email)', async () => {
       const fixtures = await seedFixtures();
+      const workspaceBUserEmail = fixtures.userEmail.replace('@', '+b@');
 
       await sql`
         insert into public.company_profiles (
@@ -315,7 +316,7 @@ async function run() {
         )
         values
           (${fixtures.userEmail}, ${fixtures.workspaceA}, 'Workspace A Brand', 'billing-a@example.com'),
-          (${fixtures.userEmail}, ${fixtures.workspaceB}, 'Workspace B Brand', 'billing-b@example.com')
+          (${workspaceBUserEmail}, ${fixtures.workspaceB}, 'Workspace B Brand', 'billing-b@example.com')
       `;
 
       const workspaceABranding = await publicBrandingModule.getCompanyProfileForInvoiceWorkspace({
