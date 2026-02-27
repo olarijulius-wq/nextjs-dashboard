@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { PLAN_CONFIG, resolveEffectivePlan } from '@/app/lib/config';
 import { enforceRateLimit } from '@/app/lib/security/api-guard';
 import { requireWorkspaceContext } from '@/app/lib/workspace-context';
+import { resolveBillingContext } from '@/app/lib/workspace-billing';
 
 export const runtime = 'nodejs';
 
@@ -74,18 +75,14 @@ export async function GET(req: Request) {
     }, { userKey: email });
   if (rl) return rl;
 
-  const userRows = await sql<
-    { plan: string | null; subscription_status: string | null }[]
-  >`
-    select plan, subscription_status
-    from public.users
-    where lower(email) = ${email}
-    limit 1
-  `;
+  const billing = await resolveBillingContext({
+    workspaceId: context.workspaceId,
+    userEmail: email,
+  });
 
   const effectivePlan = resolveEffectivePlan(
-    userRows[0]?.plan ?? null,
-    userRows[0]?.subscription_status ?? null,
+    billing.plan,
+    billing.subscriptionStatus,
   );
   const planConfig = PLAN_CONFIG[effectivePlan];
 

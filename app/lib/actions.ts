@@ -21,6 +21,7 @@ import { initialLoginState, type LoginState } from '@/app/lib/login-state';
 import { logFunnelEvent } from '@/app/lib/funnel-events';
 import { fetchCurrentMonthInvoiceMetricCount } from '@/app/lib/usage';
 import { requireWorkspaceContext } from '@/app/lib/workspace-context';
+import { resolveBillingContext } from '@/app/lib/workspace-billing';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -244,17 +245,12 @@ async function requireUserEmail() {
   return normalizeEmail(email);
 }
 
-async function fetchUserPlan(userEmail: string): Promise<PlanId> {
-  const [user] = await sql<
-    { plan: string | null; subscription_status: string | null }[]
-  >`
-    select plan, subscription_status
-    from users
-    where lower(email) = ${userEmail}
-    limit 1
-  `;
-
-  return resolveEffectivePlan(user?.plan ?? null, user?.subscription_status ?? null);
+async function fetchUserPlan(userEmail: string, workspaceId: string): Promise<PlanId> {
+  const billing = await resolveBillingContext({
+    workspaceId,
+    userEmail,
+  });
+  return resolveEffectivePlan(billing.plan, billing.subscriptionStatus);
 }
 
 async function fetchInvoiceCountThisMonth(userEmail: string, workspaceId: string | null) {
@@ -391,7 +387,7 @@ export async function createInvoice(
     };
   }
 
-  const plan = await fetchUserPlan(userEmail);
+  const plan = await fetchUserPlan(userEmail, workspaceContext.workspaceId);
   const planConfig = PLAN_CONFIG[plan];
 
   if (Number.isFinite(planConfig.maxPerMonth)) {
@@ -636,7 +632,7 @@ export async function duplicateInvoice(
     };
   }
 
-  const plan = await fetchUserPlan(userEmail);
+  const plan = await fetchUserPlan(userEmail, workspaceContext.workspaceId);
   const planConfig = PLAN_CONFIG[plan];
 
   if (Number.isFinite(planConfig.maxPerMonth)) {

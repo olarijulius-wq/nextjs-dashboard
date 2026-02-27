@@ -270,9 +270,9 @@ export async function POST(req: Request) {
     const customerId = parseStripeId(subscription.customer);
     if (customerId) {
       const existingBinding = await sql<{ workspace_id: string }[]>`
-        select workspace_id from public.workspaces
+        select workspace_id from public.workspace_billing
         where stripe_customer_id = ${customerId}
-          and id != ${workspaceId}
+          and workspace_id != ${workspaceId}
         limit 1
       `.catch(() => [] as { workspace_id: string }[]);
 
@@ -381,7 +381,7 @@ export async function POST(req: Request) {
     const userPlan = normalizePlan(sync.readback.userPlan);
     const normalizedRequestedPlanForCompare = normalizePlan(normalizedRequestedPlan);
     const effective =
-      canonical.source === 'workspace.plan'
+      canonical.source === 'workspace_billing.plan'
         ? workspacePlan === normalizedRequestedPlanForCompare
         : userPlan === normalizedRequestedPlanForCompare;
 

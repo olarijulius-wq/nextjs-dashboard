@@ -16,6 +16,7 @@ import {
 } from './definitions';
 import { formatCurrency, formatCurrencySuffix } from './utils';
 import { auth } from '@/auth';
+import { resolveBillingContext } from '@/app/lib/workspace-billing';
 import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from './config';
 import { fetchCurrentMonthInvoiceMetricCount } from '@/app/lib/usage';
 import { requireWorkspaceContext } from '@/app/lib/workspace-context';
@@ -1472,19 +1473,10 @@ export async function fetchUserPlanAndUsage(): Promise<UserPlanUsage> {
   const normalizedEmail = normalizeEmail(email);
   const workspaceContext = await requireWorkspaceContext();
 
-  // loeme korraga: kasutaja plaan + mitu invoice’it tal on
-  const userRows = await sql<{
-    is_pro: boolean | null;
-    subscription_status: string | null;
-    cancel_at_period_end: boolean | null;
-    current_period_end: Date | string | null;
-    plan: string | null;
-  }[]>`
-    select is_pro, subscription_status, cancel_at_period_end, current_period_end, plan
-    from users
-    where lower(email) = ${normalizedEmail}
-    limit 1
-  `;
+  const billing = await resolveBillingContext({
+    workspaceId: workspaceContext.workspaceId,
+    userEmail: normalizedEmail,
+  });
 
   const invoiceMetricUsage = await fetchCurrentMonthInvoiceMetricCount({
     userEmail: normalizedEmail,
@@ -1492,20 +1484,16 @@ export async function fetchUserPlanAndUsage(): Promise<UserPlanUsage> {
     metric: 'created',
   });
 
-  const user = userRows[0];
-  const plan = resolveEffectivePlan(
-    user?.plan ?? null,
-    user?.subscription_status ?? null,
-  );
+  const plan = resolveEffectivePlan(billing.plan, billing.subscriptionStatus);
   const maxPerMonth = PLAN_CONFIG[plan].maxPerMonth;
   const invoiceCount = invoiceMetricUsage.count;
 
   return {
     plan,
-    isPro: !!user?.is_pro,
-    subscriptionStatus: user?.subscription_status ?? null,
-    cancelAtPeriodEnd: user?.cancel_at_period_end ?? false,
-    currentPeriodEnd: user?.current_period_end ?? null,
+    isPro: plan !== 'free',
+    subscriptionStatus: billing.subscriptionStatus,
+    cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
+    currentPeriodEnd: billing.currentPeriodEnd,
     invoiceCount,
     maxPerMonth,
   };

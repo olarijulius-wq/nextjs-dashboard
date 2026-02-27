@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import { PLAN_CONFIG, resolveEffectivePlan, type PlanId } from './config.ts';
+import { resolveBillingContext } from './workspace-billing.ts';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -267,27 +268,43 @@ export async function fetchWorkspacePricingSettingsForUserEmail(
   };
 }
 
+async function resolveWorkspaceIdForUserEmail(userEmail: string): Promise<string | null> {
+  const [row] = await sql<{ workspace_id: string | null }[]>`
+    select coalesce(w_active.id, w_owner.id, u.active_workspace_id) as workspace_id
+    from public.users u
+    left join public.workspaces w_active
+      on w_active.id = u.active_workspace_id
+    left join public.workspaces w_owner
+      on w_owner.owner_user_id = u.id
+    where lower(u.email) = lower(${userEmail})
+    limit 1
+  `;
+
+  return row?.workspace_id ?? null;
+}
+
 export async function computeInvoiceFeeBreakdownForUser(
   userEmail: string,
   baseAmount: number,
 ): Promise<InvoiceFeeBreakdown> {
   const normalizedEmail = userEmail.trim().toLowerCase();
-  const [settings, user] = await Promise.all([
+  const [settings, workspaceId] = await Promise.all([
     fetchWorkspacePricingSettingsForUserEmail(normalizedEmail),
-    sql<{
-      plan: string | null;
-      subscription_status: string | null;
-    }[]>`
-      select plan, subscription_status
-      from public.users
-      where lower(email) = lower(${normalizedEmail})
-      limit 1
-    `,
+    resolveWorkspaceIdForUserEmail(normalizedEmail),
   ]);
+  const billing = workspaceId
+    ? await resolveBillingContext({
+      workspaceId,
+      userEmail: normalizedEmail,
+    })
+    : {
+      plan: 'free',
+      subscriptionStatus: null,
+    };
 
   const effectivePlan = resolveEffectivePlan(
-    user[0]?.plan ?? null,
-    user[0]?.subscription_status ?? null,
+    billing.plan,
+    billing.subscriptionStatus,
   );
   return computeInvoiceFeeBreakdown(
     baseAmount,

@@ -226,6 +226,8 @@ async function run() {
     const remindersRunRoute = await import('@/app/api/reminders/run/route');
     const refundRequestRoute = await import('@/app/api/public/invoices/[token]/refund-request/route');
     const smokeCheckPingRoute = await import('@/app/api/settings/smoke-check/ping/route');
+    const stripePortalRoute = await import('@/app/api/stripe/portal/route');
+    const workspaceBillingModule = await import('@/app/lib/workspace-billing');
     const stripeWorkspaceMetadataModule = await import('@/app/lib/stripe-workspace-metadata');
     const { authConfig } = await import('@/auth.config');
 
@@ -257,6 +259,13 @@ async function run() {
         smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = null;
         smokeCheckPingRoute.__testHooks.getSmokeCheckAccessDecisionOverride = null;
         smokeCheckPingRoute.__testHooks.getSmokeCheckPingPayloadOverride = null;
+        stripePortalRoute.__testHooks.authOverride = null;
+        stripePortalRoute.__testHooks.ensureWorkspaceContextOverride = null;
+        stripePortalRoute.__testHooks.enforceRateLimitOverride = null;
+        stripePortalRoute.__testHooks.createCustomerOverride = null;
+        stripePortalRoute.__testHooks.createPortalSessionOverride = null;
+        stripePortalRoute.__testHooks.assertStripeConfigOverride = null;
+        stripePortalRoute.__testHooks.onResolvedPortalCustomerId = null;
       }
     }
 
@@ -391,6 +400,39 @@ async function run() {
       assert.equal(customers[0].id, fixtures.customerA);
     });
 
+    await runCase('workspace billing keeps plans isolated between workspaces', async () => {
+      const fixtures = await seedFixtures();
+      await sql`
+        insert into public.workspace_billing (
+          workspace_id,
+          plan,
+          subscription_status,
+          stripe_customer_id,
+          updated_at
+        )
+        values
+          (${fixtures.workspaceA}, 'solo', 'active', 'cus_workspace_a', now()),
+          (${fixtures.workspaceB}, 'studio', 'active', 'cus_workspace_b', now())
+      `;
+
+      const workspaceABilling = await workspaceBillingModule.resolveBillingContext({
+        workspaceId: fixtures.workspaceA,
+        userId: fixtures.userId,
+      });
+      const workspaceBBilling = await workspaceBillingModule.resolveBillingContext({
+        workspaceId: fixtures.workspaceB,
+        userId: fixtures.userId,
+      });
+
+      assert.equal(workspaceABilling.plan, 'solo');
+      assert.equal(workspaceBBilling.plan, 'studio');
+      assert.notEqual(
+        workspaceABilling.plan,
+        workspaceBBilling.plan,
+        'workspace plans must remain isolated',
+      );
+    });
+
     await runCase('same-workspace members share listing + export visibility', async () => {
       const fixtures = await seedFixtures();
       const workspaceAOwnerContext: WorkspaceContext = {
@@ -487,6 +529,55 @@ async function run() {
       assert.equal(customerRes.status, 200, 'customer export should succeed');
       assert.match(customerCsv, new RegExp(fixtures.customerA));
       assert.doesNotMatch(customerCsv, new RegExp(fixtures.customerB));
+    });
+
+    await runCase('portal route uses workspace billing stripe_customer_id', async () => {
+      const fixtures = await seedFixtures();
+      const noRateLimit = async () => null;
+      const workspaceCustomerId = 'cus_workspace_specific';
+
+      await sql`
+        insert into public.workspace_billing (
+          workspace_id,
+          plan,
+          subscription_status,
+          stripe_customer_id,
+          updated_at
+        )
+        values (
+          ${fixtures.workspaceB},
+          'studio',
+          'active',
+          ${workspaceCustomerId},
+          now()
+        )
+      `;
+
+      stripePortalRoute.__testHooks.authOverride = async () => ({
+        user: { email: fixtures.userEmail },
+      });
+      stripePortalRoute.__testHooks.ensureWorkspaceContextOverride = async () => ({
+        workspaceId: fixtures.workspaceB,
+      });
+      stripePortalRoute.__testHooks.enforceRateLimitOverride = noRateLimit;
+      stripePortalRoute.__testHooks.assertStripeConfigOverride = () => {};
+      stripePortalRoute.__testHooks.createPortalSessionOverride = async ({ customer }) => ({
+        url: `https://portal.test/${customer}`,
+      });
+
+      let resolvedCustomerId: string | null = null;
+      stripePortalRoute.__testHooks.onResolvedPortalCustomerId = (customerId) => {
+        resolvedCustomerId = customerId;
+      };
+
+      const response = await stripePortalRoute.POST(
+        new Request('http://localhost/api/stripe/portal', { method: 'POST' }),
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 200, 'portal route should succeed');
+      assert.equal(resolvedCustomerId, workspaceCustomerId);
+      assert.equal(payload.url, `https://portal.test/${workspaceCustomerId}`);
     });
 
     await runCase('send isolation blocks cross-workspace invoice send', async () => {

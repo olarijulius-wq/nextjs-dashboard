@@ -33,6 +33,7 @@ import {
   applyPlanSync,
   readCanonicalWorkspacePlanSource,
 } from "@/app/lib/billing-sync";
+import { upsertWorkspaceBilling } from "@/app/lib/workspace-billing";
 import { enforceRateLimit } from "@/app/lib/security/api-guard";
 
 export const runtime = "nodejs";
@@ -168,11 +169,12 @@ async function resolveBillingWorkspaceContext(
   if (byCustomer) {
     const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
       select
-        coalesce(u.active_workspace_id, w.id) as workspace_id,
+        wb.workspace_id,
         u.email as user_email
-      from public.users u
-      left join public.workspaces w on w.owner_user_id = u.id
-      where u.stripe_customer_id = ${byCustomer}
+      from public.workspace_billing wb
+      join public.workspaces w on w.id = wb.workspace_id
+      join public.users u on u.id = w.owner_user_id
+      where wb.stripe_customer_id = ${byCustomer}
       limit 1
     `;
     const row = rows[0];
@@ -416,9 +418,7 @@ async function syncPlanSnapshotAndCheckEffectiveness(input: {
   });
 
   const effective =
-    synced.readback.workspacePlan === normalizedPlan ||
-    synced.readback.membershipPlan === normalizedPlan ||
-    synced.readback.userPlan === normalizedPlan;
+    synced.readback.workspacePlan === normalizedPlan;
 
   await sql`
     update public.billing_events
@@ -1579,22 +1579,19 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       return;
     }
 
-    const updated = await sql`
-      update public.users
-      set
-        plan = 'free',
-        is_pro = false,
-        subscription_status = 'canceled',
-        cancel_at_period_end = false,
-        current_period_end = null
-      where stripe_subscription_id = ${sub.id}
-      returning id, email, stripe_subscription_id, is_pro, subscription_status
-    `;
+    await upsertWorkspaceBilling({
+      workspaceId: workspace.workspaceId,
+      plan: 'free',
+      subscriptionStatus: 'canceled',
+      stripeCustomerId: null,
+      stripeSubscriptionId: sub.id ?? null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    });
 
     debugLog("customer.subscription.deleted", {
       subscriptionId: sub.id,
-      rows: updated.length,
-      user: updated[0] ?? null,
+      workspaceId: workspace.workspaceId,
     });
   }
 
@@ -1640,19 +1637,13 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       return;
     }
 
-    if (subscriptionId) {
-      await sql`
-        update public.users
-        set subscription_status = 'past_due'
-        where stripe_subscription_id = ${subscriptionId}
-      `;
-    } else if (customerId) {
-      await sql`
-        update public.users
-        set subscription_status = 'past_due'
-        where stripe_customer_id = ${customerId}
-      `;
-    }
+    await upsertWorkspaceBilling({
+      workspaceId: workspace.workspaceId,
+      plan: null,
+      subscriptionStatus: 'past_due',
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+    });
   }
 
   if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {

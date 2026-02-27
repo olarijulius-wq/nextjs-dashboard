@@ -16,6 +16,7 @@ import {
 import {
   ensureWorkspaceContextForCurrentUser,
 } from '@/app/lib/workspaces';
+import { upsertWorkspaceBilling } from '@/app/lib/workspace-billing';
 import {
   enforceRateLimit,
   parseOptionalJsonBody,
@@ -147,6 +148,23 @@ export async function POST(req: Request) {
       success_url: `${baseUrl}/dashboard/settings/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/dashboard/settings?canceled=1`,
       ...(allowPromotionCodes ? { allow_promotion_codes: true } : {}),
+    });
+
+    const checkoutCustomerId =
+      typeof checkoutSession.customer === 'string'
+        ? checkoutSession.customer
+        : checkoutSession.customer?.id ?? null;
+    const checkoutSubscriptionId =
+      typeof checkoutSession.subscription === 'string'
+        ? checkoutSession.subscription
+        : checkoutSession.subscription?.id ?? null;
+
+    await upsertWorkspaceBilling({
+      workspaceId,
+      plan: null,
+      subscriptionStatus: checkoutSubscriptionId ? 'incomplete' : null,
+      stripeCustomerId: checkoutCustomerId,
+      stripeSubscriptionId: checkoutSubscriptionId,
     });
 
     return NextResponse.json({ url: checkoutSession.url });
