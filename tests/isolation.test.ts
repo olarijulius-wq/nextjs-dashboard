@@ -226,6 +226,7 @@ async function run() {
     const remindersRunRoute = await import('@/app/api/reminders/run/route');
     const refundRequestRoute = await import('@/app/api/public/invoices/[token]/refund-request/route');
     const smokeCheckPingRoute = await import('@/app/api/settings/smoke-check/ping/route');
+    const stripeWorkspaceMetadataModule = await import('@/app/lib/stripe-workspace-metadata');
     const { authConfig } = await import('@/auth.config');
 
     let failures = 0;
@@ -343,6 +344,33 @@ async function run() {
         process.env.DIAGNOSTICS_ENABLED = previousDiagnosticsEnabled;
         process.env.INTERNAL_ADMIN_EMAILS = previousInternalAdmins;
       }
+    });
+
+    await runCase('stripe workspace metadata parser prefers workspace_id', async () => {
+      assert.equal(
+        stripeWorkspaceMetadataModule.readWorkspaceIdFromStripeMetadata({
+          workspace_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        }),
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      );
+      assert.equal(
+        stripeWorkspaceMetadataModule.readWorkspaceIdFromStripeMetadata({
+          workspace_id: '   ',
+        }),
+        null,
+      );
+      assert.equal(
+        stripeWorkspaceMetadataModule.readWorkspaceIdFromStripeMetadata({
+          workspaceId: 'legacy',
+        }),
+        null,
+      );
+      assert.equal(
+        stripeWorkspaceMetadataModule.readLegacyWorkspaceIdFromStripeMetadata({
+          workspaceId: 'legacy-workspace-id',
+        }),
+        'legacy-workspace-id',
+      );
     });
 
     await runCase('listing isolation (invoices + customers)', async () => {

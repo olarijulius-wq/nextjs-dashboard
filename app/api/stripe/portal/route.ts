@@ -62,7 +62,12 @@ export async function POST(req: Request) {
 
     if (!customerId) {
       // Kui veel pole Stripe customer'it, loome
-      const customer = await stripe.customers.create({ email });
+      const customer = await stripe.customers.create({
+        email,
+        metadata: workspaceId
+          ? { workspace_id: workspaceId }
+          : {},
+      });
       customerId = customer.id;
 
       await sql`

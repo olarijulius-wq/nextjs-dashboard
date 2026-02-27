@@ -15,7 +15,6 @@ import {
 } from '@/app/lib/stripe-guard';
 import {
   ensureWorkspaceContextForCurrentUser,
-  fetchWorkspaceMembershipsForCurrentUser,
 } from '@/app/lib/workspaces';
 import {
   enforceRateLimit,
@@ -27,7 +26,6 @@ const checkoutParamsSchema = z
   .object({
     plan: z.string().trim().toLowerCase().optional(),
     interval: z.enum(['monthly', 'annual']).default('monthly'),
-    workspaceId: z.string().trim().uuid().optional(),
   })
   .strict();
 
@@ -35,17 +33,15 @@ const checkoutBodySchema = z
   .object({
     plan: z.string().trim().toLowerCase().optional(),
     interval: z.enum(['monthly', 'annual']).optional(),
-    workspaceId: z.string().trim().uuid().optional(),
   })
   .strict();
 type CheckoutBody = z.infer<typeof checkoutBodySchema>;
 
 const checkoutQuerySchema = z
   .object({
-  plan: z.string().trim().toLowerCase().optional(),
-  interval: z.enum(['monthly', 'annual']).optional(),
-  workspaceId: z.string().trim().uuid().optional(),
-})
+    plan: z.string().trim().toLowerCase().optional(),
+    interval: z.enum(['monthly', 'annual']).optional(),
+  })
   .strict();
 
 export async function POST(req: Request) {
@@ -82,7 +78,6 @@ export async function POST(req: Request) {
   const parsed = checkoutParamsSchema.safeParse({
     plan: parsedQuery.data.plan ?? body.plan,
     interval: parsedQuery.data.interval ?? body.interval,
-    workspaceId: parsedQuery.data.workspaceId ?? body.workspaceId,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid interval' }, { status: 400 });
@@ -90,7 +85,6 @@ export async function POST(req: Request) {
 
   const requestedPlan = parsed.data.plan ?? '';
   const interval = parsed.data.interval;
-  const requestedWorkspaceId = parsed.data.workspaceId?.trim() || null;
   const userId = (session.user as { id?: string }).id ?? '';
 
   const normalizedPlan = normalizePaidPlan(requestedPlan);
@@ -115,14 +109,7 @@ export async function POST(req: Request) {
 
   try {
     const workspaceContext = await ensureWorkspaceContextForCurrentUser();
-    let workspaceId = workspaceContext.workspaceId;
-
-    if (requestedWorkspaceId) {
-      const memberships = await fetchWorkspaceMembershipsForCurrentUser();
-      if (memberships.some((membership) => membership.workspaceId === requestedWorkspaceId)) {
-        workspaceId = requestedWorkspaceId;
-      }
-    }
+    const workspaceId = workspaceContext.workspaceId;
 
     assertStripeConfig();
     const allowPromotionCodes = process.env.STRIPE_ALLOW_PROMO_CODES === '1';
@@ -145,7 +132,7 @@ export async function POST(req: Request) {
         userId,
         plan,
         interval,
-        workspaceId,
+        workspace_id: workspaceId,
       },
       subscription_data: {
         metadata: {
@@ -153,7 +140,7 @@ export async function POST(req: Request) {
           userId,
           plan,
           interval,
-          workspaceId,
+          workspace_id: workspaceId,
         },
       },
 

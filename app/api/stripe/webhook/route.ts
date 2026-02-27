@@ -14,6 +14,10 @@ import { allowedPayStatuses, canPayInvoiceStatus } from "@/app/lib/invoice-statu
 import { logFunnelEvent } from "@/app/lib/funnel-events";
 import { stripe } from "@/app/lib/stripe";
 import {
+  readLegacyWorkspaceIdFromStripeMetadata,
+  readWorkspaceIdFromStripeMetadata,
+} from "@/app/lib/stripe-workspace-metadata";
+import {
   assertStripeConfig,
   createStripeRequestVerifier,
   normalizeStripeConfigError,
@@ -34,6 +38,8 @@ import { enforceRateLimit } from "@/app/lib/security/api-guard";
 export const runtime = "nodejs";
 
 const DEBUG = process.env.DEBUG_STRIPE_WEBHOOK === "true";
+const IS_PRODUCTION =
+  process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
 const BILLING_EVENTS_DEDUPE_TYPES = new Set([
   "checkout.session.completed",
   "invoice.payment_succeeded",
@@ -58,7 +64,8 @@ function parseStripeId(value: unknown): string | null {
 }
 
 type BillingContextHints = {
-  workspaceId?: string | null;
+  metadataWorkspaceId?: string | null;
+  legacyWorkspaceId?: string | null;
   userId?: string | null;
   userEmail?: string | null;
   customerId?: string | null;
@@ -79,10 +86,27 @@ function readStripeObjectId(event: Stripe.Event): string | null {
   return normalized ? normalized : null;
 }
 
+function logMissingWorkspaceMetadata(input: {
+  event: Stripe.Event;
+  customerId?: string | null;
+  subscriptionId?: string | null;
+}) {
+  console.warn("[stripe webhook] workspace_id missing; ignoring billing sync", {
+    eventId: input.event.id,
+    eventType: input.event.type,
+    customerId: input.customerId ?? null,
+    subscriptionId: input.subscriptionId ?? null,
+    message: "workspace_id missing; ignoring billing sync",
+  });
+}
+
 async function resolveBillingWorkspaceContext(
-  hints: BillingContextHints,
+  input: {
+    event: Stripe.Event;
+    hints: BillingContextHints;
+  },
 ): Promise<BillingWorkspaceContext | null> {
-  const workspaceHint = hints.workspaceId?.trim() || null;
+  const workspaceHint = input.hints.metadataWorkspaceId?.trim() || null;
   if (workspaceHint) {
     const rows = await sql<{ workspace_id: string; user_email: string | null }[]>`
       select
@@ -102,7 +126,45 @@ async function resolveBillingWorkspaceContext(
     }
   }
 
-  const byCustomer = hints.customerId?.trim() || null;
+  if (IS_PRODUCTION) {
+    logMissingWorkspaceMetadata({
+      event: input.event,
+      customerId: input.hints.customerId ?? null,
+      subscriptionId: input.hints.subscriptionId ?? null,
+    });
+    return null;
+  }
+
+  console.warn("[stripe webhook] workspace_id missing; using non-production fallback", {
+    eventId: input.event.id,
+    eventType: input.event.type,
+    customerId: input.hints.customerId ?? null,
+    subscriptionId: input.hints.subscriptionId ?? null,
+    metadataWorkspaceId: input.hints.metadataWorkspaceId ?? null,
+    legacyWorkspaceId: input.hints.legacyWorkspaceId ?? null,
+  });
+
+  const legacyWorkspaceHint = input.hints.legacyWorkspaceId?.trim() || null;
+  if (legacyWorkspaceHint) {
+    const rows = await sql<{ workspace_id: string; user_email: string | null }[]>`
+      select
+        w.id as workspace_id,
+        u.email as user_email
+      from public.workspaces w
+      join public.users u on u.id = w.owner_user_id
+      where w.id = ${legacyWorkspaceHint}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row?.workspace_id) {
+      return {
+        workspaceId: row.workspace_id,
+        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
+      };
+    }
+  }
+
+  const byCustomer = input.hints.customerId?.trim() || null;
   if (byCustomer) {
     const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
       select
@@ -122,7 +184,7 @@ async function resolveBillingWorkspaceContext(
     }
   }
 
-  const userIdHint = hints.userId?.trim() || null;
+  const userIdHint = input.hints.userId?.trim() || null;
   if (userIdHint) {
     const rows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
       select
@@ -152,28 +214,32 @@ async function reconcileBillingRecoveryForEvent(input: {
   paymentSucceededSignal: boolean;
   hints: BillingContextHints;
 }): Promise<void> {
-  const context = await resolveBillingWorkspaceContext(input.hints);
+  const context = await resolveBillingWorkspaceContext({
+    event: input.event,
+    hints: input.hints,
+  });
+  if (!context?.workspaceId) {
+    return;
+  }
   const stripeObjectId = readStripeObjectId(input.event);
   const normalizedStatus = normalizeBillingStatus(input.status);
 
   let transitionIntoRecovery = false;
   let resolvedStatus = normalizedStatus;
 
-  if (context?.workspaceId) {
-    const update = await upsertDunningStateFromStripeSignal({
-      workspaceId: context.workspaceId,
-      userEmail: input.hints.userEmail ?? context.userEmail,
-      status: input.status,
-      paymentFailedSignal: input.paymentFailedSignal,
-      paymentSucceededSignal: input.paymentSucceededSignal,
-    });
-    transitionIntoRecovery = update.transitionedIntoRecovery;
-    resolvedStatus = update.current.subscriptionStatus;
-  }
+  const update = await upsertDunningStateFromStripeSignal({
+    workspaceId: context.workspaceId,
+    userEmail: input.hints.userEmail ?? context.userEmail,
+    status: input.status,
+    paymentFailedSignal: input.paymentFailedSignal,
+    paymentSucceededSignal: input.paymentSucceededSignal,
+  });
+  transitionIntoRecovery = update.transitionedIntoRecovery;
+  resolvedStatus = update.current.subscriptionStatus;
 
   await insertBillingEvent({
-    workspaceId: context?.workspaceId ?? null,
-    userEmail: input.hints.userEmail ?? context?.userEmail ?? null,
+    workspaceId: context.workspaceId,
+    userEmail: input.hints.userEmail ?? context.userEmail ?? null,
     eventType: input.event.type,
     stripeEventId: input.event.id,
     stripeObjectId,
@@ -187,7 +253,7 @@ async function reconcileBillingRecoveryForEvent(input: {
     },
   });
 
-  if (transitionIntoRecovery && context?.workspaceId) {
+  if (transitionIntoRecovery) {
     try {
       await maybeSendRecoveryEmailForWorkspace({
         workspaceId: context.workspaceId,
@@ -227,92 +293,6 @@ function readInvoiceReferenceId(
     | undefined,
 ): string | null {
   return parseStripeId(invoice);
-}
-
-async function resolveWorkspaceContextFromCheckoutSession(
-  session: Stripe.Checkout.Session,
-): Promise<{ workspaceId: string; userEmail: string | null } | null> {
-  const metadataWorkspaceId = session.metadata?.workspaceId?.trim() || null;
-  if (metadataWorkspaceId) {
-    const rows = await sql<{ workspace_id: string; user_email: string | null }[]>`
-      select
-        w.id as workspace_id,
-        u.email as user_email
-      from public.workspaces w
-      join public.users u on u.id = w.owner_user_id
-      where w.id = ${metadataWorkspaceId}
-      limit 1
-    `;
-    const row = rows[0];
-    if (row?.workspace_id) {
-      return {
-        workspaceId: row.workspace_id,
-        userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
-      };
-    }
-  }
-
-  const customerId = parseCustomerId(session.customer);
-  if (customerId) {
-    const customerRows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
-      select
-        coalesce(u.active_workspace_id, w.id) as workspace_id,
-        u.email as user_email
-      from public.users u
-      left join public.workspaces w on w.owner_user_id = u.id
-      where u.stripe_customer_id = ${customerId}
-      limit 1
-    `;
-    const customer = customerRows[0];
-    if (customer?.workspace_id) {
-      return {
-        workspaceId: customer.workspace_id,
-        userEmail: customer.user_email ? normalizeEmail(customer.user_email) : null,
-      };
-    }
-  }
-
-  const userId = session.metadata?.userId?.trim() || null;
-  if (!userId) {
-    return null;
-  }
-
-  const activeRows = await sql<{ workspace_id: string | null; user_email: string | null }[]>`
-    select
-      w.id as workspace_id,
-      u.email as user_email
-    from public.users u
-    left join public.workspaces w on w.id = u.active_workspace_id
-    where u.id = ${userId}
-    limit 1
-  `;
-  const active = activeRows[0];
-  if (active?.workspace_id) {
-    return {
-      workspaceId: active.workspace_id,
-      userEmail: active.user_email ? normalizeEmail(active.user_email) : null,
-    };
-  }
-
-  const ownedRows = await sql<{ workspace_id: string; user_email: string | null }[]>`
-    select
-      w.id as workspace_id,
-      u.email as user_email
-    from public.workspaces w
-    join public.users u on u.id = w.owner_user_id
-    where w.owner_user_id = ${userId}
-    order by w.created_at asc
-    limit 2
-  `;
-  if (ownedRows.length === 1) {
-    const row = ownedRows[0];
-    return {
-      workspaceId: row.workspace_id,
-      userEmail: row.user_email ? normalizeEmail(row.user_email) : null,
-    };
-  }
-
-  return null;
 }
 
 function toStoredBillingInterval(
@@ -1293,6 +1273,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
+    const metadataWorkspaceId = readWorkspaceIdFromStripeMetadata(session.metadata);
+    const legacyWorkspaceId = readLegacyWorkspaceIdFromStripeMetadata(session.metadata);
     billingContextHints.userId = session.metadata?.userId ?? null;
     billingContextHints.userEmail =
       session.customer_email ||
@@ -1302,7 +1284,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     billingContextHints.customerId = parseCustomerId(session.customer);
     billingContextHints.subscriptionId =
       typeof session.subscription === "string" ? session.subscription : null;
-    billingContextHints.workspaceId = session.metadata?.workspaceId ?? null;
+    billingContextHints.metadataWorkspaceId = metadataWorkspaceId;
+    billingContextHints.legacyWorkspaceId = legacyWorkspaceId;
 
     if (
       session.mode === "subscription" &&
@@ -1313,17 +1296,18 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       paymentSucceededSignal = true;
 
       try {
-        const workspace = await resolveWorkspaceContextFromCheckoutSession(session);
-        if (!workspace?.workspaceId) {
-          console.warn("[stripe webhook] workspace resolution failed", {
-            eventType: event.type,
-            sessionId: session.id ?? null,
-            subscriptionId: session.subscription,
-            strategy: "metadata.workspaceId|customer|metadata.userId",
-            metadataWorkspaceId: session.metadata?.workspaceId ?? null,
+        const workspace = await resolveBillingWorkspaceContext({
+          event,
+          hints: {
+            metadataWorkspaceId,
+            legacyWorkspaceId,
+            userId: session.metadata?.userId ?? null,
+            userEmail: session.metadata?.userEmail ?? null,
             customerId: parseCustomerId(session.customer),
-            metadataUserId: session.metadata?.userId ?? null,
-          });
+            subscriptionId: session.subscription,
+          },
+        });
+        if (!workspace?.workspaceId) {
           captureBillingBusinessException(
             new Error("Unable to resolve workspace for checkout.session.completed"),
             {
@@ -1331,7 +1315,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
               sessionId: session.id ?? null,
               subscriptionId: session.subscription,
               userId: session.metadata?.userId ?? null,
-              workspaceId: session.metadata?.workspaceId ?? null,
+              workspaceId: metadataWorkspaceId ?? null,
             },
           );
           return;
@@ -1401,7 +1385,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           subscriptionId:
             typeof session.subscription === "string" ? session.subscription : null,
           userId: session.metadata?.userId ?? null,
-          workspaceId: session.metadata?.workspaceId ?? null,
+          workspaceId: metadataWorkspaceId ?? null,
         });
         return;
       }
@@ -1469,6 +1453,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     event.type === "customer.subscription.updated"
   ) {
     const sub = event.data.object as Stripe.Subscription;
+    const metadataWorkspaceId = readWorkspaceIdFromStripeMetadata(sub.metadata);
+    const legacyWorkspaceId = readLegacyWorkspaceIdFromStripeMetadata(sub.metadata);
 
     const subscriptionId = sub.id;
     const customerId =
@@ -1480,7 +1466,8 @@ async function processEvent(event: Stripe.Event): Promise<void> {
       typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
     billingContextHints.userId = sub.metadata?.userId ?? null;
     billingContextHints.userEmail = sub.metadata?.userEmail ?? null;
-    billingContextHints.workspaceId = sub.metadata?.workspaceId ?? null;
+    billingContextHints.metadataWorkspaceId = metadataWorkspaceId;
+    billingContextHints.legacyWorkspaceId = legacyWorkspaceId;
     const subscriptionPrice = sub.items?.data?.[0]?.price;
     const plan = resolvePaidPlanFromStripe({
       metadataPlan: sub.metadata?.plan ?? null,
@@ -1494,24 +1481,17 @@ async function processEvent(event: Stripe.Event): Promise<void> {
 
     try {
       const workspace = await resolveBillingWorkspaceContext({
-        workspaceId: sub.metadata?.workspaceId ?? null,
-        userId: sub.metadata?.userId ?? null,
-        userEmail: sub.metadata?.userEmail ?? null,
-        customerId,
-        subscriptionId,
-      });
-
-      if (!workspace?.workspaceId) {
-        console.warn("[stripe webhook] workspace resolution failed", {
-          eventType: event.type,
-          sessionId: null,
-          subscriptionId,
-          strategy: "metadata.workspaceId|customer|metadata.userId",
-          metadataWorkspaceId: sub.metadata?.workspaceId ?? null,
+        event,
+        hints: {
+          metadataWorkspaceId,
+          legacyWorkspaceId,
+          userId: sub.metadata?.userId ?? null,
+          userEmail: sub.metadata?.userEmail ?? null,
           customerId,
-          metadataUserId: sub.metadata?.userId ?? null,
-        });
-      }
+          subscriptionId,
+        },
+      });
+      if (!workspace?.workspaceId) return;
 
       const inserted = await insertBillingEvent({
         workspaceId: workspace?.workspaceId ?? null,
@@ -1564,7 +1544,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
         event,
         subscriptionId: sub.id,
         userId: sub.metadata?.userId ?? null,
-        workspaceId: sub.metadata?.workspaceId ?? null,
+        workspaceId: metadataWorkspaceId ?? null,
       });
       return;
     }
@@ -1572,13 +1552,32 @@ async function processEvent(event: Stripe.Event): Promise<void> {
 
   if (event.type === "customer.subscription.deleted") {
     const sub = event.data.object as Stripe.Subscription;
+    const metadataWorkspaceId = readWorkspaceIdFromStripeMetadata(sub.metadata);
+    const legacyWorkspaceId = readLegacyWorkspaceIdFromStripeMetadata(sub.metadata);
     billingStatusSignal = "canceled";
     billingContextHints.subscriptionId = sub.id;
     billingContextHints.customerId =
       typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
     billingContextHints.userId = sub.metadata?.userId ?? null;
     billingContextHints.userEmail = sub.metadata?.userEmail ?? null;
-    billingContextHints.workspaceId = sub.metadata?.workspaceId ?? null;
+    billingContextHints.metadataWorkspaceId = metadataWorkspaceId;
+    billingContextHints.legacyWorkspaceId = legacyWorkspaceId;
+
+    const workspace = await resolveBillingWorkspaceContext({
+      event,
+      hints: {
+        metadataWorkspaceId,
+        legacyWorkspaceId,
+        userId: sub.metadata?.userId ?? null,
+        userEmail: sub.metadata?.userEmail ?? null,
+        customerId:
+          typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
+        subscriptionId: sub.id,
+      },
+    });
+    if (!workspace?.workspaceId) {
+      return;
+    }
 
     const updated = await sql`
       update public.users
@@ -1616,6 +1615,30 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     billingContextHints.subscriptionId = subscriptionId;
     billingContextHints.customerId = customerId;
     billingContextHints.userEmail = stripeInvoice.customer_email ?? null;
+    billingContextHints.metadataWorkspaceId =
+      readWorkspaceIdFromStripeMetadata(invoiceAny.parent?.subscription_details?.metadata) ??
+      readWorkspaceIdFromStripeMetadata(invoiceAny.subscription_details?.metadata) ??
+      readWorkspaceIdFromStripeMetadata(invoiceAny.lines?.data?.[0]?.metadata) ??
+      null;
+    billingContextHints.legacyWorkspaceId =
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.parent?.subscription_details?.metadata) ??
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.subscription_details?.metadata) ??
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.lines?.data?.[0]?.metadata) ??
+      null;
+
+    const workspace = await resolveBillingWorkspaceContext({
+      event,
+      hints: {
+        metadataWorkspaceId: billingContextHints.metadataWorkspaceId,
+        legacyWorkspaceId: billingContextHints.legacyWorkspaceId,
+        userEmail: billingContextHints.userEmail,
+        customerId,
+        subscriptionId,
+      },
+    });
+    if (!workspace?.workspaceId) {
+      return;
+    }
 
     if (subscriptionId) {
       await sql`
@@ -1649,38 +1672,33 @@ async function processEvent(event: Stripe.Event): Promise<void> {
     billingContextHints.subscriptionId = subscriptionId;
     billingContextHints.customerId = customerId;
     billingContextHints.userEmail = stripeInvoice.customer_email ?? null;
-    billingContextHints.workspaceId =
-      invoiceAny.parent?.subscription_details?.metadata?.workspaceId ??
-      invoiceAny.subscription_details?.metadata?.workspaceId ??
-      invoiceAny.lines?.data?.[0]?.metadata?.workspaceId ??
+    billingContextHints.metadataWorkspaceId =
+      readWorkspaceIdFromStripeMetadata(invoiceAny.parent?.subscription_details?.metadata) ??
+      readWorkspaceIdFromStripeMetadata(invoiceAny.subscription_details?.metadata) ??
+      readWorkspaceIdFromStripeMetadata(invoiceAny.lines?.data?.[0]?.metadata) ??
+      null;
+    billingContextHints.legacyWorkspaceId =
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.parent?.subscription_details?.metadata) ??
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.subscription_details?.metadata) ??
+      readLegacyWorkspaceIdFromStripeMetadata(invoiceAny.lines?.data?.[0]?.metadata) ??
       null;
 
     try {
       const workspace = await resolveBillingWorkspaceContext({
-        workspaceId: billingContextHints.workspaceId,
-        userId:
-          invoiceAny.parent?.subscription_details?.metadata?.userId ??
-          invoiceAny.subscription_details?.metadata?.userId ??
-          null,
-        userEmail: billingContextHints.userEmail,
-        customerId,
-        subscriptionId,
-      });
-
-      if (!workspace?.workspaceId) {
-        console.warn("[stripe webhook] workspace resolution failed", {
-          eventType: event.type,
-          sessionId: null,
-          subscriptionId: subscriptionId ?? null,
-          strategy: "metadata.workspaceId|customer|metadata.userId",
-          metadataWorkspaceId: billingContextHints.workspaceId ?? null,
-          customerId,
-          metadataUserId:
+        event,
+        hints: {
+          metadataWorkspaceId: billingContextHints.metadataWorkspaceId,
+          legacyWorkspaceId: billingContextHints.legacyWorkspaceId,
+          userId:
             invoiceAny.parent?.subscription_details?.metadata?.userId ??
             invoiceAny.subscription_details?.metadata?.userId ??
             null,
-        });
-      }
+          userEmail: billingContextHints.userEmail,
+          customerId,
+          subscriptionId,
+        },
+      });
+      if (!workspace?.workspaceId) return;
 
       const inserted = await insertBillingEvent({
         workspaceId: workspace?.workspaceId ?? null,
@@ -1740,7 +1758,7 @@ async function processEvent(event: Stripe.Event): Promise<void> {
           invoiceAny.parent?.subscription_details?.metadata?.userId ??
           invoiceAny.subscription_details?.metadata?.userId ??
           null,
-        workspaceId: billingContextHints.workspaceId ?? null,
+        workspaceId: billingContextHints.metadataWorkspaceId ?? null,
       });
       return;
     }

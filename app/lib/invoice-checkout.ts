@@ -12,6 +12,7 @@ export type InvoiceCheckoutInput = {
   invoice_number: string | null;
   customer_email: string | null;
   user_email: string;
+  workspace_id?: string | null;
 };
 
 export type InvoiceCheckoutOptions = {
@@ -72,6 +73,7 @@ export async function createInvoiceCheckoutSession(
       invoiceId: invoice.id,
       invoice_id: invoice.id,
       user_email: invoice.user_email,
+      ...(invoice.workspace_id ? { workspace_id: invoice.workspace_id } : {}),
     },
   };
 
@@ -103,6 +105,7 @@ export async function createInvoiceCheckoutSession(
         invoiceId: invoice.id,
         invoice_id: invoice.id,
         user_email: invoice.user_email,
+        ...(invoice.workspace_id ? { workspace_id: invoice.workspace_id } : {}),
       },
       payment_intent_data: paymentIntentData,
       success_url: successUrl,

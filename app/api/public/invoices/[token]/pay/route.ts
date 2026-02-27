@@ -72,6 +72,7 @@ export async function POST(
     invoice_number: string | null;
     customer_email: string | null;
     user_email: string;
+    workspace_id: string | null;
   }[]>`
     SELECT
       invoices.id,
@@ -79,7 +80,8 @@ export async function POST(
       invoices.status,
       invoices.invoice_number,
       customers.email AS customer_email,
-      invoices.user_email
+      invoices.user_email,
+      invoices.workspace_id
     FROM invoices
     JOIN customers
       ON customers.id = invoices.customer_id
@@ -181,6 +183,7 @@ export async function POST(
         invoice_number: invoice.invoice_number,
         customer_email: invoice.customer_email,
         user_email: ownerEmail,
+        workspace_id: invoice.workspace_id,
       },
       baseUrl,
       {

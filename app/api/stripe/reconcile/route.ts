@@ -7,6 +7,7 @@ import { stripe } from '@/app/lib/stripe';
 import { resolvePaidPlanFromStripe } from '@/app/lib/config';
 import { applyPlanSync, readCanonicalWorkspacePlanSource } from '@/app/lib/billing-sync';
 import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
+import { readWorkspaceIdFromStripeMetadata } from '@/app/lib/stripe-workspace-metadata';
 import {
   enforceRateLimit,
   parseJsonBody,
@@ -16,6 +17,7 @@ const reconcileSchema = z
   .object({
     sessionId: z.string().trim().min(1).optional(),
     subscriptionId: z.string().trim().min(1).optional(),
+    workspaceId: z.string().trim().uuid().optional(),
   })
   .strict()
   .refine((value) => Boolean(value.sessionId || value.subscriptionId), {
@@ -107,33 +109,6 @@ function jsonFailure(input: {
   );
 }
 
-async function resolveWorkspaceForUser(input: {
-  metadataWorkspaceId: string | null;
-}): Promise<{
-  workspaceId: string | null;
-  strategy: 'metadata.workspaceId' | 'active_workspace' | 'none';
-}> {
-  if (input.metadataWorkspaceId) {
-    return {
-      workspaceId: input.metadataWorkspaceId,
-      strategy: 'metadata.workspaceId',
-    };
-  }
-
-  try {
-    const context = await ensureWorkspaceContextForCurrentUser();
-    return {
-      workspaceId: context.workspaceId,
-      strategy: 'active_workspace',
-    };
-  } catch {
-    return {
-      workspaceId: null,
-      strategy: 'none',
-    };
-  }
-}
-
 export async function POST(req: Request) {
   const build = buildStamp();
   try {
@@ -179,7 +154,7 @@ export async function POST(req: Request) {
       return parsedBody.response;
     }
 
-    const { sessionId, subscriptionId } = parsedBody.data;
+    const { sessionId, subscriptionId, workspaceId: requestedWorkspaceId } = parsedBody.data;
 
     let checkoutSession: Stripe.Checkout.Session | null = null;
     let subscription: Stripe.Subscription | null = null;
@@ -224,11 +199,11 @@ export async function POST(req: Request) {
     }
 
     const metadataWorkspaceId =
-      checkoutSession?.metadata?.workspaceId?.trim() ||
-      subscription.metadata?.workspaceId?.trim() ||
+      readWorkspaceIdFromStripeMetadata(checkoutSession?.metadata) ||
+      readWorkspaceIdFromStripeMetadata(subscription.metadata) ||
       null;
-    const workspaceResolution = await resolveWorkspaceForUser({ metadataWorkspaceId });
-    const workspaceId = workspaceResolution.workspaceId;
+    const activeWorkspaceContext = await ensureWorkspaceContextForCurrentUser().catch(() => null);
+    const workspaceId = requestedWorkspaceId ?? activeWorkspaceContext?.workspaceId ?? null;
 
     if (!workspaceId) {
       console.warn('[stripe reconcile] workspace resolution failed', {
@@ -236,7 +211,8 @@ export async function POST(req: Request) {
         eventType: 'manual_reconcile',
         sessionId: sessionId ?? null,
         subscriptionId: subscription.id,
-        strategy: workspaceResolution.strategy,
+        strategy: 'request_or_active_workspace',
+        requestedWorkspaceId: requestedWorkspaceId ?? null,
         metadataWorkspaceId: metadataWorkspaceId ?? null,
       });
       return jsonFailure({
@@ -244,6 +220,18 @@ export async function POST(req: Request) {
         code: 'WORKSPACE_RESOLUTION_FAILED',
         message: 'Could not resolve workspace for the current user.',
         build,
+      });
+    }
+    if (metadataWorkspaceId && metadataWorkspaceId !== workspaceId) {
+      return jsonFailure({
+        status: 409,
+        code: 'WORKSPACE_METADATA_MISMATCH',
+        message: 'Requested workspace does not match Stripe metadata.workspace_id.',
+        build,
+        debug: {
+          workspaceId,
+          metadataWorkspaceId,
+        },
       });
     }
 
@@ -265,7 +253,8 @@ export async function POST(req: Request) {
       console.warn('[stripe reconcile] membership mismatch', {
         userId,
         workspaceId,
-        strategy: workspaceResolution.strategy,
+        strategy: 'request_or_active_workspace',
+        requestedWorkspaceId: requestedWorkspaceId ?? null,
         metadataWorkspaceId: metadataWorkspaceId ?? null,
       });
       return jsonFailure({
