@@ -46,12 +46,12 @@ BEGIN
       AND t.relname = 'customers'
       AND c.contype IN ('u', 'p')
       AND (
-        SELECT array_agg(a.attname ORDER BY cols.ordinality)
+        SELECT array_agg(a.attname::text ORDER BY cols.ordinality)
         FROM unnest(c.conkey) WITH ORDINALITY AS cols(attnum, ordinality)
         JOIN pg_attribute a
           ON a.attrelid = t.oid
          AND a.attnum = cols.attnum
-      ) = ARRAY['id', 'workspace_id']
+      ) = ARRAY['id', 'workspace_id']::text[]
   ) THEN
     ALTER TABLE public.customers
       ADD CONSTRAINT customers_id_workspace_id_key
@@ -73,19 +73,19 @@ BEGIN
       AND c.contype = 'f'
       AND c.confrelid = 'public.customers'::regclass
       AND (
-        SELECT array_agg(a.attname ORDER BY cols.ordinality)
+        SELECT array_agg(a.attname::text ORDER BY cols.ordinality)
         FROM unnest(c.conkey) WITH ORDINALITY AS cols(attnum, ordinality)
         JOIN pg_attribute a
           ON a.attrelid = t.oid
          AND a.attnum = cols.attnum
-      ) = ARRAY['customer_id', 'workspace_id']
+      ) = ARRAY['customer_id', 'workspace_id']::text[]
       AND (
-        SELECT array_agg(a.attname ORDER BY cols.ordinality)
+        SELECT array_agg(a.attname::text ORDER BY cols.ordinality)
         FROM unnest(c.confkey) WITH ORDINALITY AS cols(attnum, ordinality)
         JOIN pg_attribute a
           ON a.attrelid = c.confrelid
          AND a.attnum = cols.attnum
-      ) = ARRAY['id', 'workspace_id']
+      ) = ARRAY['id', 'workspace_id']::text[]
   ) THEN
     ALTER TABLE public.invoices
       ADD CONSTRAINT invoices_customer_workspace_fkey
