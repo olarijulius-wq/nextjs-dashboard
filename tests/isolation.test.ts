@@ -223,6 +223,7 @@ async function run() {
     const invoiceExportRoute = await import('@/app/api/invoices/export/route');
     const customerExportRoute = await import('@/app/api/customers/export/route');
     const sendInvoiceRoute = await import('@/app/api/invoices/[id]/send/route');
+    const remindersRunRoute = await import('@/app/api/reminders/run/route');
     const refundRequestRoute = await import('@/app/api/public/invoices/[token]/refund-request/route');
     const smokeCheckPingRoute = await import('@/app/api/settings/smoke-check/ping/route');
     const { authConfig } = await import('@/auth.config');
@@ -251,6 +252,7 @@ async function run() {
         sendInvoiceRoute.__testHooks.requireWorkspaceRoleOverride = null;
         sendInvoiceRoute.__testHooks.sendInvoiceEmailOverride = null;
         sendInvoiceRoute.__testHooks.revalidatePathOverride = null;
+        remindersRunRoute.__testHooks.sendWorkspaceEmailOverride = null;
         smokeCheckPingRoute.__testHooks.ensureWorkspaceContextForCurrentUserOverride = null;
         smokeCheckPingRoute.__testHooks.getSmokeCheckAccessDecisionOverride = null;
         smokeCheckPingRoute.__testHooks.getSmokeCheckPingPayloadOverride = null;
@@ -485,6 +487,43 @@ async function run() {
         `expected 403 or 404 for cross-workspace send, got ${res.status}`,
       );
       assert.equal(sendCalled, false, 'cross-workspace invoice must not trigger email send');
+    });
+
+    await runCase('reminder run sends via workspace provider selector path', async () => {
+      const fixtures = await seedFixtures();
+      let sendCalled = false;
+      let sendUseCase: string | null = null;
+      const previousReminderCronToken = process.env.REMINDER_CRON_TOKEN;
+      const previousMailFromEmail = process.env.MAIL_FROM_EMAIL;
+
+      process.env.REMINDER_CRON_TOKEN = 'test-reminder-cron-token';
+      process.env.MAIL_FROM_EMAIL = 'billing@example.com';
+
+      try {
+        remindersRunRoute.__testHooks.sendWorkspaceEmailOverride = async (input) => {
+          sendCalled = true;
+          sendUseCase = input.useCase ?? null;
+          return { provider: 'smtp', messageId: 'test-message-id' };
+        };
+
+        const response = await remindersRunRoute.POST(
+          new Request('http://localhost/api/reminders/run?triggeredBy=cron', {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer test-reminder-cron-token',
+              'x-reminders-workspace-id': fixtures.workspaceA,
+              'x-forwarded-for': '203.0.113.20',
+            },
+          }),
+        );
+
+        assert.equal(response.status, 200, 'reminder run should succeed');
+        assert.equal(sendCalled, true, 'reminder run should call workspace email sender');
+        assert.equal(sendUseCase, 'reminder', 'reminder run should pass reminder use case');
+      } finally {
+        process.env.REMINDER_CRON_TOKEN = previousReminderCronToken;
+        process.env.MAIL_FROM_EMAIL = previousMailFromEmail;
+      }
     });
 
     await runCase('refund request scopes to invoice workspace (not active workspace)', async () => {

@@ -36,7 +36,7 @@ type MailSettingsLike = {
   smtpPasswordPresent?: boolean;
 };
 
-type MailFromUseCase = 'default' | 'reminder' | 'invoice';
+export type MailFromUseCase = 'default' | 'reminder' | 'invoice';
 
 let hasWarnedAboutFromEnvConflict = false;
 

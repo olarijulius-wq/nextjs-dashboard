@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   hasReminderSenderConfigured,
-  sendInvoiceReminderEmail,
-  type ReminderDeliveryResult,
 } from '@/app/lib/email';
+import { sendWorkspaceEmail } from '@/app/lib/smtp-settings';
 import { generatePayLink } from '@/app/lib/pay-link';
 import { sendWithThrottle } from '@/app/lib/throttled-batch-sender';
 import { getEmailBaseUrl } from '@/app/lib/app-url';
@@ -50,6 +49,21 @@ export const runtime = 'nodejs';
 const DEFAULT_EMAIL_THROTTLE_MS = 6000;
 const DEFAULT_EMAIL_BATCH_SIZE = 25;
 const DEFAULT_EMAIL_MAX_RUN_MS = 480000;
+const TEST_HOOKS_ENABLED =
+  process.env.NODE_ENV === 'test' && process.env.LATELLESS_TEST_MODE === '1';
+export const __testHooksEnabled = TEST_HOOKS_ENABLED;
+export const __testHooks = {
+  sendWorkspaceEmailOverride: null as
+    | null
+    | ((input: {
+      workspaceId: string;
+      toEmail: string;
+      subject: string;
+      bodyHtml: string;
+      bodyText: string;
+      useCase?: 'default' | 'reminder' | 'invoice';
+    }) => Promise<{ provider: 'resend' | 'smtp'; messageId: string | null }>),
+};
 const remindersRunQuerySchema = z
   .object({
     dryRun: z.enum(['0', '1', 'true', 'false']).optional(),
@@ -840,12 +854,28 @@ async function runReminderJob(req: Request) {
           <p>Thank you,<br />Lateless</p>
         `;
 
-          const delivery: ReminderDeliveryResult = await sendInvoiceReminderEmail({
-            to: customerEmail,
-            subject,
-            bodyHtml,
-            bodyText,
-          });
+          if (!reminder.workspace_id) {
+            throw new Error('Workspace context is required to send reminder emails.');
+          }
+
+          const delivery =
+            TEST_HOOKS_ENABLED && __testHooks.sendWorkspaceEmailOverride
+              ? await __testHooks.sendWorkspaceEmailOverride({
+                workspaceId: reminder.workspace_id,
+                toEmail: customerEmail,
+                subject,
+                bodyHtml,
+                bodyText,
+                useCase: 'reminder',
+              })
+              : await sendWorkspaceEmail({
+                workspaceId: reminder.workspace_id,
+                toEmail: customerEmail,
+                subject,
+                bodyHtml,
+                bodyText,
+                useCase: 'reminder',
+              });
 
           updatedInvoiceIds.push(reminder.id);
           if (workspaceAccumulator) {
@@ -886,7 +916,7 @@ async function runReminderJob(req: Request) {
           const errorItem = classifyDeliveryError({
             reminder,
             error,
-            provider: 'resend',
+            provider: 'unknown',
             providerMessageId: null,
           });
           errors.push(errorItem);

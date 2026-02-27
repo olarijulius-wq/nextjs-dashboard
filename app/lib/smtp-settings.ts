@@ -5,6 +5,7 @@ import {
   buildMailFromHeader,
   buildResendFromHeader,
   getEffectiveMailConfig,
+  type MailFromUseCase,
 } from '@/app/lib/email';
 import {
   decryptString,
@@ -420,6 +421,7 @@ async function sendWithResend(input: {
   subject: string;
   bodyHtml: string;
   bodyText: string;
+  useCase: MailFromUseCase;
   workspaceSettings?: WorkspaceEmailSettingsRow | null;
 }): Promise<{ messageId: string | null }> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -430,7 +432,7 @@ async function sendWithResend(input: {
   }
 
   const config = getEffectiveMailConfig({
-    useCase: 'invoice',
+    useCase: input.useCase,
     workspaceSettings: input.workspaceSettings
       ? {
           provider: input.workspaceSettings.provider,
@@ -446,7 +448,7 @@ async function sendWithResend(input: {
         }
       : null,
   });
-  const from = buildResendFromHeader(config.fromEmail, 'invoice');
+  const from = buildResendFromHeader(config.fromEmail, input.useCase);
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -488,6 +490,7 @@ async function sendWithSmtp(
   subject: string,
   bodyHtml: string,
   bodyText: string,
+  useCase: MailFromUseCase,
 ) : Promise<{ messageId: string | null }> {
   const smtpHost = settings.smtp_host;
   const smtpPort = settings.smtp_port;
@@ -508,7 +511,7 @@ async function sendWithSmtp(
   };
   const transporter = nodemailer.createTransport(transportOptions);
   const config = getEffectiveMailConfig({
-    useCase: 'invoice',
+    useCase,
     workspaceSettings: {
       provider: settings.provider,
       fromName: settings.from_name,
@@ -521,7 +524,7 @@ async function sendWithSmtp(
     },
   });
   const info = await transporter.sendMail({
-    from: buildMailFromHeader(config.fromEmail, config.fromName, 'invoice'),
+    from: buildMailFromHeader(config.fromEmail, config.fromName, useCase),
     replyTo: config.replyTo ?? undefined,
     to,
     subject,
@@ -557,6 +560,7 @@ export async function sendWorkspaceTestEmail(input: {
       subject,
       bodyHtml,
       bodyText,
+      useCase: 'invoice',
       workspaceSettings: settings,
     });
     return { provider: 'resend', messageId: result.messageId };
@@ -583,6 +587,7 @@ export async function sendWorkspaceTestEmail(input: {
     subject,
     bodyHtml,
     bodyText,
+    'invoice',
   );
   return { provider: 'smtp', messageId: result.messageId };
 }
@@ -593,6 +598,7 @@ export async function sendWorkspaceEmail(input: {
   subject: string;
   bodyHtml: string;
   bodyText: string;
+  useCase?: MailFromUseCase;
 }): Promise<{ provider: EmailProviderMode; messageId: string | null }> {
   const settings = await fetchWorkspaceEmailSettingsWithSecret(input.workspaceId);
   const envProvider = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
@@ -610,6 +616,7 @@ export async function sendWorkspaceEmail(input: {
       subject: input.subject,
       bodyHtml: input.bodyHtml,
       bodyText: input.bodyText,
+      useCase: input.useCase ?? 'invoice',
       workspaceSettings: settings,
     });
     return { provider: 'resend', messageId: result.messageId };
@@ -631,6 +638,7 @@ export async function sendWorkspaceEmail(input: {
     input.subject,
     input.bodyHtml,
     input.bodyText,
+    input.useCase ?? 'invoice',
   );
   return { provider: 'smtp', messageId: result.messageId };
 }
