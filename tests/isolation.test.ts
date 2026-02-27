@@ -47,6 +47,7 @@ async function closeSqlClients() {
 async function resetDb() {
   await sql`
     truncate table
+      public.refund_requests,
       public.invoice_email_logs,
       public.company_profiles,
       public.invoices,
@@ -218,9 +219,11 @@ async function run() {
 
     const dataModule = await import('@/app/lib/data');
     const publicBrandingModule = await import('@/app/lib/public-branding');
+    const payLinkModule = await import('@/app/lib/pay-link');
     const invoiceExportRoute = await import('@/app/api/invoices/export/route');
     const customerExportRoute = await import('@/app/api/customers/export/route');
     const sendInvoiceRoute = await import('@/app/api/invoices/[id]/send/route');
+    const refundRequestRoute = await import('@/app/api/public/invoices/[token]/refund-request/route');
 
     let failures = 0;
 
@@ -391,6 +394,87 @@ async function run() {
         `expected 403 or 404 for cross-workspace send, got ${res.status}`,
       );
       assert.equal(sendCalled, false, 'cross-workspace invoice must not trigger email send');
+    });
+
+    await runCase('refund request scopes to invoice workspace (not active workspace)', async () => {
+      const fixtures = await seedFixtures();
+
+      await sql`
+        update public.users
+        set active_workspace_id = ${fixtures.workspaceB}
+        where id = ${fixtures.userId}
+      `;
+      await sql`
+        update public.invoices
+        set
+          status = 'paid',
+          paid_at = now()
+        where id = ${fixtures.invoiceA}
+      `;
+
+      const token = payLinkModule.generatePayToken(fixtures.invoiceA);
+      const res = await refundRequestRoute.POST(
+        new Request(`http://localhost/api/public/invoices/${token}/refund-request`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '203.0.113.10',
+          },
+          body: JSON.stringify({
+            reason: 'Please refund this accidental duplicate payment.',
+          }),
+        }),
+        { params: Promise.resolve({ token }) },
+      );
+
+      assert.equal(res.status, 200, 'refund request should succeed');
+
+      const [refundRow] = await sql<{ workspace_id: string; invoice_id: string }[]>`
+        select workspace_id, invoice_id
+        from public.refund_requests
+        where invoice_id = ${fixtures.invoiceA}
+        limit 1
+      `;
+      assert.ok(refundRow, 'refund request row should be inserted');
+      assert.equal(refundRow.workspace_id, fixtures.workspaceA);
+      assert.notEqual(refundRow.workspace_id, fixtures.workspaceB);
+    });
+
+    await runCase('refund request fails closed when invoice.workspace_id is missing', async () => {
+      const fixtures = await seedFixtures();
+
+      await sql`
+        update public.invoices
+        set
+          status = 'paid',
+          paid_at = now(),
+          workspace_id = null
+        where id = ${fixtures.invoiceA}
+      `;
+
+      const token = payLinkModule.generatePayToken(fixtures.invoiceA);
+      const res = await refundRequestRoute.POST(
+        new Request(`http://localhost/api/public/invoices/${token}/refund-request`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '203.0.113.11',
+          },
+          body: JSON.stringify({
+            reason: 'Refund request should fail when workspace is unset.',
+          }),
+        }),
+        { params: Promise.resolve({ token }) },
+      );
+
+      assert.equal(res.status, 404, 'missing invoice workspace should fail closed');
+
+      const rows = await sql<{ id: string }[]>`
+        select id
+        from public.refund_requests
+        where invoice_id = ${fixtures.invoiceA}
+      `;
+      assert.equal(rows.length, 0, 'no refund request should be created');
     });
 
     if (failures > 0) {

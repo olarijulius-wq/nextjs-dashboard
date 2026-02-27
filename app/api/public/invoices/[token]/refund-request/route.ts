@@ -107,12 +107,8 @@ export async function POST(
         i.paid_at,
         i.invoice_number,
         i.user_email,
-        coalesce(w.id, u.active_workspace_id) as workspace_id
+        i.workspace_id
       from public.invoices i
-      join public.users u
-        on lower(u.email) = lower(i.user_email)
-      left join public.workspaces w
-        on w.owner_user_id = u.id
       where i.id = ${verification.payload.invoiceId}
       limit 1
     `;
@@ -139,9 +135,12 @@ export async function POST(
     }
 
     if (!invoice.workspace_id) {
+      console.warn('[refund request] workspace_id missing; migration/backfill required', {
+        invoiceId: invoice.id,
+      });
       return NextResponse.json(
-        { ok: false, message: 'Workspace is not configured for this invoice.' },
-        { status: 400 },
+        { ok: false, message: 'Invoice not found.' },
+        { status: 404 },
       );
     }
 
