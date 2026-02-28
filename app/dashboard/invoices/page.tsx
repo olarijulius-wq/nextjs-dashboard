@@ -6,7 +6,7 @@ import {
   fetchFilteredInvoices,
   fetchInvoicesPages,
   fetchUserInvoiceUsageProgress,
-  fetchStripeConnectAccountId,
+  fetchInvoicePayActionContext,
   type InvoiceSortDir,
   type InvoiceSortKey,
   type InvoiceStatusFilter,
@@ -85,11 +85,11 @@ export default async function Page(props: {
       ? `/dashboard/invoices?${returnToParams.toString()}`
       : '/dashboard/invoices';
 
-  const [invoices, totalPages, usage, stripeConnectAccountId] = await Promise.all([
+  const [invoices, totalPages, usage, payActionContext] = await Promise.all([
     fetchFilteredInvoices(query, currentPage, statusFilter, sortKey, sortDir, pageSize),
     fetchInvoicesPages(query, statusFilter, pageSize),
     fetchUserInvoiceUsageProgress(),
-    fetchStripeConnectAccountId(),
+    fetchInvoicePayActionContext(),
   ]);
 
   const { planId, usedThisMonth, maxPerMonth, percentUsed } = usage;
@@ -152,7 +152,9 @@ export default async function Page(props: {
           />
           <Table
             invoices={invoices}
-            hasStripeConnect={!!stripeConnectAccountId}
+            userRole={payActionContext.userRole}
+            workspaceBillingMissing={payActionContext.workspaceBillingMissing}
+            hasConnectedPayoutAccount={payActionContext.hasConnectedPayoutAccount}
             highlightedInvoiceId={highlight}
             returnToPath={returnToPath}
           />

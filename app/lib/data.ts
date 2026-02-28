@@ -219,6 +219,37 @@ export async function fetchStripeConnectAccountId(): Promise<string | null> {
   return status.accountId;
 }
 
+export type InvoicePayActionContext = {
+  userRole: 'owner' | 'admin' | 'member';
+  workspaceBillingMissing: boolean;
+  hasConnectedPayoutAccount: boolean;
+};
+
+export async function fetchInvoicePayActionContext(): Promise<InvoicePayActionContext> {
+  const workspaceContext = await requireWorkspaceContext();
+  const [row] = await sql<{
+    workspace_billing_workspace_id: string | null;
+    owner_stripe_connect_account_id: string | null;
+  }[]>`
+    select
+      wb.workspace_id as workspace_billing_workspace_id,
+      owner_user.stripe_connect_account_id as owner_stripe_connect_account_id
+    from public.workspaces w
+    left join public.users owner_user
+      on owner_user.id = w.owner_user_id
+    left join public.workspace_billing wb
+      on wb.workspace_id = w.id
+    where w.id = ${workspaceContext.workspaceId}
+    limit 1
+  `;
+
+  return {
+    userRole: workspaceContext.role,
+    workspaceBillingMissing: !(row?.workspace_billing_workspace_id?.trim()),
+    hasConnectedPayoutAccount: !!row?.owner_stripe_connect_account_id?.trim(),
+  };
+}
+
 export type StripeConnectStatus = {
   hasAccount: boolean;
   accountId: string | null;

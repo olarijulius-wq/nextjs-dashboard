@@ -15,12 +15,16 @@ import SendInvoiceButton from '@/app/ui/invoices/send-invoice-button';
 
 export default function InvoicesTable({
   invoices,
-  hasStripeConnect,
+  userRole,
+  workspaceBillingMissing,
+  hasConnectedPayoutAccount,
   highlightedInvoiceId,
   returnToPath,
 }: {
   invoices: InvoicesTableType[];
-  hasStripeConnect: boolean;
+  userRole: 'owner' | 'admin' | 'member';
+  workspaceBillingMissing: boolean;
+  hasConnectedPayoutAccount: boolean;
   highlightedInvoiceId?: string;
   returnToPath: string;
 }) {
@@ -117,6 +121,8 @@ export default function InvoicesTable({
     navigateToInvoice(invoiceId);
   }
 
+  const canManageWorkspaceBilling = userRole === 'owner' || userRole === 'admin';
+
   return (
     <div className="mt-6 min-w-0 flow-root">
       {lastSentInvoice ? (
@@ -196,19 +202,20 @@ export default function InvoicesTable({
                             />
                           </div>
                           {canPayInvoiceStatus(invoice.status) &&
-                            (hasStripeConnect ? (
-                              <PayInvoiceButton
-                                invoiceId={invoice.id}
-                                className="rounded-md px-2 py-1 text-xs whitespace-nowrap"
-                              />
-                            ) : (
+                            (canManageWorkspaceBilling &&
+                            (workspaceBillingMissing || !hasConnectedPayoutAccount) ? (
                               <Link
                                 href="/dashboard/settings/payouts"
                                 className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                               >
                                 Connect Stripe
                               </Link>
-                            ))}
+                            ) : hasConnectedPayoutAccount ? (
+                              <PayInvoiceButton
+                                invoiceId={invoice.id}
+                                className="rounded-md px-2 py-1 text-xs whitespace-nowrap"
+                              />
+                            ) : null)}
                         </div>
                         {invoice.last_email_sent_at ? (
                           <div className="mt-1 max-w-[220px]">
@@ -352,19 +359,20 @@ export default function InvoicesTable({
                           initialError={invoice.last_email_error}
                         />
                         {canPayInvoiceStatus(invoice.status) &&
-                          (hasStripeConnect ? (
-                            <PayInvoiceButton
-                              invoiceId={invoice.id}
-                              className="rounded-md px-2 py-1 text-xs"
-                            />
-                          ) : (
+                          (canManageWorkspaceBilling &&
+                          (workspaceBillingMissing || !hasConnectedPayoutAccount) ? (
                             <Link
                               href="/dashboard/settings/payouts"
                               className="inline-flex items-center justify-center rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                             >
                               Connect Stripe
                             </Link>
-                          ))}
+                          ) : hasConnectedPayoutAccount ? (
+                            <PayInvoiceButton
+                              invoiceId={invoice.id}
+                              className="rounded-md px-2 py-1 text-xs"
+                            />
+                          ) : null)}
                         <UpdateInvoice id={invoice.id} returnTo={returnToPath} />
                         <DeleteInvoice id={invoice.id} />
                       </div>
