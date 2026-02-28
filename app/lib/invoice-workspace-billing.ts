@@ -5,7 +5,6 @@ import { sql } from '@/app/lib/db';
 export type InvoiceWorkspaceBillingResolution = {
   invoiceId: string;
   workspaceId: string | null;
-  workspaceBillingExists: boolean;
   stripeAccountId: string | null;
   stripeCustomerId: string | null;
 };
