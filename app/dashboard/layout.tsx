@@ -30,7 +30,10 @@ export default async function Layout({ children }: { children: React.ReactNode }
     const workspaceContext = await ensureWorkspaceContextForCurrentUser();
     const dunningState = await fetchWorkspaceDunningState(workspaceContext.workspaceId);
     showRecoveryBanner = shouldShowDunningBanner(dunningState);
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      redirect('/login');
+    }
     showRecoveryBanner = false;
   }
 

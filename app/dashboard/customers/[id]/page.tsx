@@ -130,6 +130,7 @@ export default async function Page(props: {
       }
     >
       <TwoColumnDetail
+        className="lg:grid-cols-[minmax(0,6fr)_minmax(0,2fr)]"
         primary={
           <>
             <SectionCard className="space-y-4">

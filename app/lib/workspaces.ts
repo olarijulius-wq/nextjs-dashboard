@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import postgres from 'postgres';
 import { auth } from '@/auth';
 import {
   COMPANY_LIMIT_BY_PLAN,
@@ -7,8 +6,7 @@ import {
   TEAM_SEAT_LIMIT_BY_PLAN,
 } from '@/app/lib/config';
 import { readCanonicalWorkspacePlanSource } from '@/app/lib/billing-sync';
-
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+import { sql } from '@/app/lib/db';
 export const TEAM_MIGRATION_REQUIRED_CODE = 'TEAM_MIGRATION_REQUIRED';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member';

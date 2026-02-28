@@ -45,7 +45,8 @@ export default async function Page(props: {
   const statusFilter: InvoiceStatusFilter =
     searchParams?.status === 'overdue' ||
     searchParams?.status === 'unpaid' ||
-    searchParams?.status === 'paid'
+    searchParams?.status === 'paid' ||
+    searchParams?.status === 'refunded'
       ? searchParams.status
       : 'all';
   const sortKey: InvoiceSortKey =

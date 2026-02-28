@@ -12,6 +12,7 @@ import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import SendInvoiceButton from '@/app/ui/invoices/send-invoice-button';
+import { primaryButtonClasses } from '@/app/ui/button';
 
 export default function InvoicesTable({
   invoices,
@@ -202,14 +203,14 @@ export default function InvoicesTable({
                             (workspaceBillingMissing || !hasConnectedPayoutAccount) ? (
                               <Link
                                 href="/dashboard/settings/payouts"
-                                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                className={`${primaryButtonClasses} pointer-events-auto relative z-10 h-9 whitespace-nowrap px-3 text-xs`}
                               >
                                 Connect Stripe
                               </Link>
                             ) : hasConnectedPayoutAccount ? (
                               <PayInvoiceButton
                                 invoiceId={invoice.id}
-                                className="rounded-md px-2 py-1 text-xs whitespace-nowrap"
+                                className="whitespace-nowrap"
                               />
                             ) : null)}
                         </div>
@@ -351,14 +352,14 @@ export default function InvoicesTable({
                           (workspaceBillingMissing || !hasConnectedPayoutAccount) ? (
                             <Link
                               href="/dashboard/settings/payouts"
-                              className="inline-flex items-center justify-center rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                              className={`${primaryButtonClasses} pointer-events-auto relative z-10 h-9 whitespace-nowrap px-3 text-xs`}
                             >
                               Connect Stripe
                             </Link>
                           ) : hasConnectedPayoutAccount ? (
                             <PayInvoiceButton
                               invoiceId={invoice.id}
-                              className="rounded-md px-2 py-1 text-xs"
+                              className="whitespace-nowrap"
                             />
                           ) : null)}
                         <UpdateInvoice id={invoice.id} returnTo={returnToPath} />
