@@ -235,7 +235,7 @@ export default function CustomersTable({
                       <div className="py-1 text-slate-700 dark:text-zinc-300">
                         {customer.total_invoices}
                       </div>
-                      <div className="py-1">
+                      <div className="py-1 dark:text-zinc-200">
                         <div className="flex flex-col items-start gap-1">
                           <InvoiceStatus status="pending" />
                           <span>{customer.total_pending}</span>

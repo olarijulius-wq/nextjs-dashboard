@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   CheckIcon,
   ClockIcon,
+  MagnifyingGlassIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -34,9 +35,14 @@ export default function Form({
   const initialState: CreateInvoiceState | null = null;
   const [state, formAction] = useActionState(createInvoice, initialState);
   const [customerId, setCustomerId] = useState(initialCustomerId ?? '');
+  const [customerSearch, setCustomerSearch] = useState('');
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const hasCustomers = customers.length > 0;
+  const filteredCustomers = customers.filter((customer) =>
+    customer.name.toLowerCase().includes(customerSearch.trim().toLowerCase()),
+  );
   const billingHref = `/dashboard/settings/billing?plan=${encodeURIComponent(usage.planId)}${
     interval ? `&interval=${encodeURIComponent(interval)}` : ''
   }`;
@@ -49,26 +55,59 @@ export default function Form({
           <label htmlFor="customer" className="mb-2 block text-sm font-medium text-neutral-900 dark:text-neutral-100">
             Choose customer
           </label>
-          <div className="relative">
-            <select
-              id="customer"
-              name="customerId"
-              className="peer block w-full cursor-pointer rounded-xl border border-neutral-300 bg-white py-2 pl-10 text-sm text-neutral-900 outline-none placeholder:text-neutral-500 transition focus:border-neutral-800 focus:ring-2 focus:ring-neutral-500/30 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:border-neutral-700 dark:focus:ring-neutral-500/40"
-              value={customerId}
-              onChange={(event) => setCustomerId(event.target.value)}
-              aria-describedby="customer-error"
-            >
-              <option value="" disabled>
-                Select a customer
-              </option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-            <UserCircleIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-800 dark:peer-focus:text-neutral-300" />
-          </div>
+          {hasCustomers ? (
+            <>
+              <div className="relative mb-2">
+                <input
+                  id="customer-search"
+                  type="text"
+                  value={customerSearch}
+                  onChange={(event) => setCustomerSearch(event.target.value)}
+                  placeholder="Search customers..."
+                  className="peer block w-full rounded-xl border border-neutral-300 bg-white py-2 pl-10 text-sm text-neutral-900 outline-none placeholder:text-neutral-500 transition focus:border-neutral-800 focus:ring-2 focus:ring-neutral-500/30 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:border-neutral-700 dark:focus:ring-neutral-500/40"
+                />
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-800 dark:peer-focus:text-neutral-300" />
+              </div>
+              <div className="relative">
+                <select
+                  id="customer"
+                  name="customerId"
+                  className="peer block w-full cursor-pointer rounded-xl border border-neutral-300 bg-white py-2 pl-10 text-sm text-neutral-900 outline-none placeholder:text-neutral-500 transition focus:border-neutral-800 focus:ring-2 focus:ring-neutral-500/30 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:border-neutral-700 dark:focus:ring-neutral-500/40"
+                  value={customerId}
+                  onChange={(event) => setCustomerId(event.target.value)}
+                  aria-describedby="customer-error"
+                >
+                  <option value="" disabled>
+                    Select a customer
+                  </option>
+                  {filteredCustomers.length === 0 ? (
+                    <option value="" disabled>
+                      No customers match your search
+                    </option>
+                  ) : (
+                    filteredCustomers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <UserCircleIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-neutral-500 transition peer-focus:text-neutral-800 dark:peer-focus:text-neutral-300" />
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-900/40">
+              <p className="text-sm text-neutral-700 dark:text-neutral-200">No customers yet.</p>
+              <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                Create a customer to start invoicing.
+              </p>
+              <div className="mt-3">
+                <Link href="/dashboard/customers/create" className={primaryButtonClasses}>
+                  Create customer
+                </Link>
+              </div>
+            </div>
+          )}
           <div id="customer-error" aria-live="polite" aria-atomic="true">
             {state?.ok === false &&
               state.errors?.customerId &&

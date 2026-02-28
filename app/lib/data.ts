@@ -541,7 +541,7 @@ export async function fetchCardData() {
   }
 }
 
-export type InvoiceStatusFilter = 'all' | 'overdue' | 'unpaid' | 'paid';
+export type InvoiceStatusFilter = 'all' | 'overdue' | 'unpaid' | 'paid' | 'refunded';
 export type InvoiceSortKey =
   | 'due_date'
   | 'amount'
@@ -615,7 +615,12 @@ const LATE_PAYER_ORDER_BY_SQL_BY_KEY: Record<
 function normalizeInvoiceStatusFilter(
   statusFilter: string | undefined,
 ): InvoiceStatusFilter {
-  if (statusFilter === 'overdue' || statusFilter === 'unpaid' || statusFilter === 'paid') {
+  if (
+    statusFilter === 'overdue' ||
+    statusFilter === 'unpaid' ||
+    statusFilter === 'paid' ||
+    statusFilter === 'refunded'
+  ) {
     return statusFilter;
   }
   return 'all';
@@ -776,6 +781,7 @@ export async function fetchFilteredInvoices(
         AND (
           ${safeStatusFilter} = 'all'
           OR (${safeStatusFilter} = 'paid' AND invoices.status = 'paid')
+          OR (${safeStatusFilter} = 'refunded' AND invoices.status = 'refunded')
           OR (${safeStatusFilter} = 'unpaid' AND invoices.status <> 'paid')
           OR (
             ${safeStatusFilter} = 'overdue'
@@ -833,6 +839,7 @@ export async function fetchFilteredInvoices(
           AND (
             ${safeStatusFilter} = 'all'
             OR (${safeStatusFilter} = 'paid' AND invoices.status = 'paid')
+            OR (${safeStatusFilter} = 'refunded' AND invoices.status = 'refunded')
             OR (${safeStatusFilter} = 'unpaid' AND invoices.status <> 'paid')
             OR (
               ${safeStatusFilter} = 'overdue'
@@ -884,6 +891,7 @@ export async function fetchInvoicesPages(
         AND (
           ${safeStatusFilter} = 'all'
           OR (${safeStatusFilter} = 'paid' AND invoices.status = 'paid')
+          OR (${safeStatusFilter} = 'refunded' AND invoices.status = 'refunded')
           OR (${safeStatusFilter} = 'unpaid' AND invoices.status <> 'paid')
           OR (
             ${safeStatusFilter} = 'overdue'

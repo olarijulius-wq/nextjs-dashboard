@@ -326,6 +326,24 @@ function ReminderActionButton({
   );
 }
 
+function SummaryStatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+}) {
+  return (
+    <article className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-800 dark:bg-neutral-900">
+      <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{value}</p>
+      <p className="text-xs text-neutral-600 dark:text-neutral-400">{hint}</p>
+    </article>
+  );
+}
+
 type UpcomingTableProps = {
   items: ReminderPanelItem[];
   selectedItem: ReminderPanelItem | null;
@@ -363,6 +381,39 @@ function UpcomingTable({
   const [sendFilter, setSendFilter] = useState<'all' | 'will-send' | 'skipped'>('all');
   const [pauseFilter, setPauseFilter] = useState<'any' | 'invoice_paused' | 'customer_paused'>('any');
 
+  const summaryCounts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let active = 0;
+    let paused = 0;
+    let dueSoon = 0;
+
+    for (const item of items) {
+      if (item.pauseState) {
+        paused += 1;
+      }
+
+      if (item.willSend === 'yes' && !item.pauseState) {
+        active += 1;
+      }
+
+      const nextSendDate = new Date(item.nextSendDateIso);
+      if (Number.isNaN(nextSendDate.getTime())) {
+        continue;
+      }
+      nextSendDate.setHours(0, 0, 0, 0);
+      const daysUntil = Math.floor(
+        (nextSendDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      if (daysUntil >= 0 && daysUntil <= 3) {
+        dueSoon += 1;
+      }
+    }
+
+    return { active, paused, dueSoon };
+  }, [items]);
+
   const filteredItems = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -392,77 +443,101 @@ function UpcomingTable({
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950 md:p-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Upcoming reminders</h2>
-          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-            Next 50 reminder candidates sorted by next send date.
-          </p>
-        </div>
-        {canRunReminders ? (
-          <div className="w-full">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-start gap-3">
-                <input
-                  id="dry-run-toggle"
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(event) => setDryRun(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border border-neutral-400 bg-white text-neutral-900 accent-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
-                />
-                <div className="flex flex-col">
-                  <label
-                    htmlFor="dry-run-toggle"
-                    className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
-                  >
-                    Dry run
-                  </label>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Simulates sending. No emails are sent and invoices aren’t updated.
-                  </p>
-                </div>
-              </div>
+      <header>
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Upcoming reminders</h2>
+        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+          Next 50 reminder candidates sorted by next send date.
+        </p>
+      </header>
 
+      <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Summary</p>
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <SummaryStatCard
+            label="Active"
+            value={summaryCounts.active}
+            hint="Eligible and not paused"
+          />
+          <SummaryStatCard
+            label="Paused"
+            value={summaryCounts.paused}
+            hint="Invoice or customer pause"
+          />
+          <SummaryStatCard
+            label="Due soon"
+            value={summaryCounts.dueSoon}
+            hint="Next send in 0-3 days"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            {canRunReminders ? (
+              <div className="w-full">
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Controls</p>
+                <div className="mt-2 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-start gap-3">
+                    <input
+                      id="dry-run-toggle"
+                      type="checkbox"
+                      checked={dryRun}
+                      onChange={(event) => setDryRun(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border border-neutral-400 bg-white text-neutral-900 accent-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
+                    />
+                    <div className="flex flex-col">
+                      <label
+                        htmlFor="dry-run-toggle"
+                        className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
+                      >
+                        Dry run
+                      </label>
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                        Simulates sending. No emails are sent and invoices aren’t updated.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="w-full md:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleRunNow}
+                      disabled={isRunning}
+                      className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-900 bg-neutral-900 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60 md:h-9 md:w-auto md:text-xs"
+                    >
+                      {isRunning ? 'Running...' : 'Run reminders now'}
+                    </button>
+                  </div>
+                </div>
+                {runMessage ? (
+                  <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">{runMessage}</p>
+                ) : null}
+              </div>
+            ) : (
               <div className="w-full md:ml-auto md:w-auto md:text-right">
                 <button
                   type="button"
-                  onClick={handleRunNow}
-                  disabled={isRunning}
-                  className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-black transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60 md:h-9 md:w-auto md:text-xs"
+                  disabled
+                  title="Owner/Admin only"
+                  className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-black opacity-60 md:h-9 md:w-auto md:text-xs"
                 >
-                  {isRunning ? 'Running...' : 'Run reminders now'}
+                  Run reminders now
                 </button>
+                <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">Owner/Admin only.</p>
               </div>
-            </div>
-            {runMessage ? (
-              <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">{runMessage}</p>
-            ) : null}
+            )}
           </div>
-        ) : (
-          <div className="w-full md:ml-auto md:w-auto md:text-right">
-            <button
-              type="button"
-              disabled
-              title="Owner/Admin only"
-              className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-black opacity-60 md:h-9 md:w-auto md:text-xs"
-            >
-              Run reminders now
-            </button>
-            <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-              Owner/Admin only.
-            </p>
-          </div>
-        )}
-      </div>
 
-      <FiltersRow
-        search={search}
-        setSearch={setSearch}
-        sendFilter={sendFilter}
-        setSendFilter={setSendFilter}
-        pauseFilter={pauseFilter}
-        setPauseFilter={setPauseFilter}
-      />
+          <FiltersRow
+            search={search}
+            setSearch={setSearch}
+            sendFilter={sendFilter}
+            setSendFilter={setSendFilter}
+            pauseFilter={pauseFilter}
+            setPauseFilter={setPauseFilter}
+          />
+        </div>
+      </div>
 
       {pauseMigrationWarning ? (
         <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">{pauseMigrationWarning}</p>
@@ -472,11 +547,17 @@ function UpcomingTable({
         <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">No reminders match filters.</p>
       ) : (
         <>
-          <div className="mt-4 hidden md:block">
+          <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Reminder list</p>
+              <p className="text-xs text-neutral-500">{filteredItems.length} visible</p>
+            </div>
+          </div>
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <div className="max-h-[70vh] min-h-0 overflow-y-auto rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-black">
                 <table className="w-full border-collapse text-left text-sm">
-                  <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-white text-xs uppercase tracking-[0.08em] text-neutral-600 dark:border-neutral-800 dark:bg-black dark:text-neutral-400">
+                  <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50 text-[11px] uppercase tracking-[0.08em] text-neutral-600 dark:border-neutral-800 dark:bg-black dark:text-neutral-400">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Next send</th>
                   <th className="px-3 py-2 font-semibold">Reminder #</th>
@@ -504,32 +585,32 @@ function UpcomingTable({
                             }
                           }}
                           className={clsx(
-                            'cursor-pointer border-l-2 border-transparent bg-white text-neutral-700 transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-0 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900',
+                            'cursor-pointer border-l-2 border-transparent bg-white text-neutral-700 transition hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-0 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900',
                             isSelected &&
                               'border-l-neutral-400 bg-neutral-100 text-neutral-900 dark:border-l-neutral-500 dark:bg-neutral-900 dark:text-neutral-100',
                           )}
                         >
-                          <td className="px-3 py-3">{item.nextSendDateLabel}</td>
-                          <td className="px-3 py-3">{item.reminderNumber}</td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3.5">{item.nextSendDateLabel}</td>
+                          <td className="px-3 py-3.5">{item.reminderNumber}</td>
+                          <td className="px-3 py-3.5">
                             <p className="font-medium text-neutral-900 dark:text-neutral-100">{item.customerName}</p>
                             <p className="text-xs text-neutral-600 dark:text-neutral-400">
                               {item.customerEmail || 'No email'}
                             </p>
                           </td>
-                          <td className="px-3 py-3">{item.invoiceLabel}</td>
-                          <td className="px-3 py-3">{item.amountLabel}</td>
-                          <td className="px-3 py-3">{item.dueDateLabel}</td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3.5">{item.invoiceLabel}</td>
+                          <td className="px-3 py-3.5 font-medium text-neutral-900 dark:text-neutral-100">{item.amountLabel}</td>
+                          <td className="px-3 py-3.5">{item.dueDateLabel}</td>
+                          <td className="px-3 py-3.5">
                             <div className="flex flex-wrap items-center gap-2">
                               <StatusPill status={item.status} />
                               <PausePill pauseState={item.pauseState} />
                             </div>
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3.5">
                             <WillSendPill item={item} />
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3.5">
                             <ReminderActionButton
                               item={item}
                               canManagePauses={canManagePauses}

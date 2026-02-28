@@ -87,6 +87,7 @@ export default function InvoicesListControls({
           ['overdue', 'Overdue'],
           ['unpaid', 'Unpaid'],
           ['paid', 'Paid'],
+          ['refunded', 'Refunded'],
         ] as const).map(([value, label]) => {
           const active = statusFilter === value;
           return (
