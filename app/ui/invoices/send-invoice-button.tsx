@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { primaryButtonClasses, secondaryButtonClasses } from '@/app/ui/button';
 
@@ -53,7 +53,15 @@ export default function SendInvoiceButton({
 
   const sentLabel = useMemo(() => formatSentAt(sentAt), [sentAt]);
 
-  async function handleSend() {
+  function stopRowNavigation(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  async function handleSend(event?: MouseEvent<HTMLElement>) {
+    if (event) {
+      stopRowNavigation(event);
+    }
     if (isSending) return;
     setIsSending(true);
     setError(null);
@@ -67,8 +75,16 @@ export default function SendInvoiceButton({
       const payload = (await response.json().catch(() => null)) as SendInvoiceResponse | null;
 
       if (!response.ok || !payload?.ok) {
+        const fallbackError =
+          response.status === 403
+            ? 'You do not have permission to send invoice emails in this workspace.'
+            : response.status === 401
+              ? 'You need to sign in again to send invoice emails.'
+              : response.status >= 500
+                ? 'Invoice email failed to send. Check SMTP settings and try again.'
+                : 'Failed to send invoice email.';
         setStatus('failed');
-        setError(payload?.error ?? payload?.actionHint ?? 'Failed to send invoice email.');
+        setError(payload?.error ?? payload?.actionHint ?? fallbackError);
         setActionUrl(payload?.actionUrl ?? null);
         return;
       }
@@ -100,9 +116,12 @@ export default function SendInvoiceButton({
     <div className={compact ? 'space-y-1' : 'space-y-2'}>
       <button
         type="button"
-        onClick={handleSend}
+        onClick={(event) => {
+          void handleSend(event);
+        }}
         disabled={isSending}
-        className={compact ? `${primaryButtonClasses} h-9 px-2 text-xs w-24 md:w-auto justify-center text-center whitespace-nowrap` : `${primaryButtonClasses} h-9 px-3`}
+        data-row-nav-stop
+        className={compact ? `${primaryButtonClasses} pointer-events-auto relative z-10 h-9 w-24 justify-center whitespace-nowrap px-2 text-center text-xs md:w-auto` : `${primaryButtonClasses} pointer-events-auto relative z-10 h-9 px-3`}
       >
         {isSending
           ? 'Sending…'
@@ -130,15 +149,19 @@ export default function SendInvoiceButton({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleSend}
-              className={`${secondaryButtonClasses} h-8 px-2 text-xs`}
+              onClick={(event) => {
+                void handleSend(event);
+              }}
+              data-row-nav-stop
+              className={`${secondaryButtonClasses} pointer-events-auto relative z-10 h-8 px-2 text-xs`}
             >
               Retry
             </button>
             {actionUrl ? (
               <a
                 href={actionUrl}
-                className={`${secondaryButtonClasses} h-8 px-2 text-xs`}
+                data-row-nav-stop
+                className={`${secondaryButtonClasses} pointer-events-auto relative z-10 h-8 px-2 text-xs`}
               >
                 Fix customer
               </a>
