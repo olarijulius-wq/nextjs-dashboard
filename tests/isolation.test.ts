@@ -229,6 +229,7 @@ async function run() {
     const stripePortalRoute = await import('@/app/api/stripe/portal/route');
     const workspaceBillingModule = await import('@/app/lib/workspace-billing');
     const stripeWorkspaceMetadataModule = await import('@/app/lib/stripe-workspace-metadata');
+    const invoiceWorkspaceBillingModule = await import('@/app/lib/invoice-workspace-billing');
     const { authConfig } = await import('@/auth.config');
 
     let failures = 0;
@@ -525,6 +526,82 @@ async function run() {
       );
     });
 
+    await runCase('invoice workspace billing resolver uses workspace owner Stripe account', async () => {
+      const fixtures = await seedFixtures();
+      const memberInvoiceId = 'dddddddd-6666-4666-8666-dddddddd6666';
+      const ownerStripeAccount = 'acct_workspace_owner';
+      const memberStripeAccount = 'acct_workspace_member';
+      const workspaceCustomerId = 'cus_workspace_a';
+
+      await sql`
+        update public.users
+        set
+          stripe_connect_account_id = case
+            when id = ${fixtures.userId} then ${ownerStripeAccount}
+            when id = ${fixtures.teammateUserId} then ${memberStripeAccount}
+            else stripe_connect_account_id
+          end,
+          stripe_connect_payouts_enabled = true,
+          stripe_connect_details_submitted = true
+        where id in (${fixtures.userId}, ${fixtures.teammateUserId})
+      `;
+
+      await sql`
+        insert into public.workspace_billing (
+          workspace_id,
+          plan,
+          subscription_status,
+          stripe_customer_id,
+          updated_at
+        )
+        values (
+          ${fixtures.workspaceA},
+          'solo',
+          'active',
+          ${workspaceCustomerId},
+          now()
+        )
+      `;
+
+      await sql`
+        insert into public.invoices (
+          id,
+          customer_id,
+          amount,
+          status,
+          date,
+          due_date,
+          user_email,
+          invoice_number,
+          workspace_id,
+          created_at
+        )
+        values (
+          ${memberInvoiceId},
+          ${fixtures.customerA},
+          18000,
+          'pending',
+          date '2026-01-13',
+          date '2026-01-23',
+          ${fixtures.teammateUserEmail},
+          'A-003',
+          ${fixtures.workspaceA},
+          now()
+        )
+      `;
+
+      const resolved =
+        await invoiceWorkspaceBillingModule.resolveStripeWorkspaceBillingForInvoice(
+          memberInvoiceId,
+        );
+
+      assert.ok(resolved, 'workspace billing resolver should return a row');
+      assert.equal(resolved.workspaceId, fixtures.workspaceA);
+      assert.equal(resolved.stripeAccountId, ownerStripeAccount);
+      assert.equal(resolved.stripeCustomerId, workspaceCustomerId);
+      assert.notEqual(resolved.stripeAccountId, memberStripeAccount);
+    });
+
     await runCase('public branding resolves by invoice workspace (not user email)', async () => {
       const fixtures = await seedFixtures();
       const workspaceBUserEmail = fixtures.userEmail.replace('@', '+b@');
@@ -743,6 +820,46 @@ async function run() {
       assert.ok(refundRow, 'refund request row should be inserted');
       assert.equal(refundRow.workspace_id, fixtures.workspaceA);
       assert.notEqual(refundRow.workspace_id, fixtures.workspaceB);
+    });
+
+    await runCase('refund request token cannot be remapped to another workspace', async () => {
+      const fixtures = await seedFixtures();
+
+      await sql`
+        update public.invoices
+        set
+          status = 'paid',
+          paid_at = now()
+        where id in (${fixtures.invoiceA}, ${fixtures.invoiceB})
+      `;
+
+      const token = payLinkModule.generatePayToken(fixtures.invoiceB);
+      const res = await refundRequestRoute.POST(
+        new Request(`http://localhost/api/public/invoices/${token}/refund-request`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '203.0.113.22',
+          },
+          body: JSON.stringify({
+            reason: 'Workspace B refund request should remain in workspace B.',
+          }),
+        }),
+        { params: Promise.resolve({ token }) },
+      );
+
+      assert.equal(res.status, 200, 'refund request should succeed');
+
+      const [refundRow] = await sql<{ workspace_id: string; invoice_id: string }[]>`
+        select workspace_id, invoice_id
+        from public.refund_requests
+        where invoice_id = ${fixtures.invoiceB}
+        limit 1
+      `;
+      assert.ok(refundRow, 'refund request row should be inserted for invoice B');
+      assert.equal(refundRow.invoice_id, fixtures.invoiceB);
+      assert.equal(refundRow.workspace_id, fixtures.workspaceB);
+      assert.notEqual(refundRow.workspace_id, fixtures.workspaceA);
     });
 
     await runCase('refund request fails closed when invoice.workspace_id is missing', async () => {

@@ -7,7 +7,7 @@ import {
   routeUuidParamsSchema,
 } from '@/app/lib/security/api-guard';
 import { createInvoiceCheckoutSession } from '@/app/lib/invoice-checkout';
-import { fetchStripeConnectStatusForUser } from '@/app/lib/data';
+import { ensureWorkspaceContextForCurrentUser } from '@/app/lib/workspaces';
 import { canPayInvoiceStatus } from '@/app/lib/invoice-status';
 import {
   PRICING_FEES_MIGRATION_REQUIRED_CODE,
@@ -23,6 +23,7 @@ import {
   assertStripeConfig,
   normalizeStripeConfigError,
 } from '@/app/lib/stripe-guard';
+import { resolveStripeWorkspaceBillingForInvoice } from '@/app/lib/invoice-workspace-billing';
 
 export const runtime = 'nodejs';
 
@@ -60,7 +61,6 @@ export async function POST(
     status: string;
     invoice_number: string | null;
     customer_email: string | null;
-    user_email: string;
     workspace_id: string | null;
   }[]>`
     SELECT
@@ -69,14 +69,11 @@ export async function POST(
       invoices.status,
       invoices.invoice_number,
       customers.email AS customer_email,
-      invoices.user_email,
       invoices.workspace_id
     FROM invoices
     JOIN customers
       ON customers.id = invoices.customer_id
-      AND lower(customers.user_email) = ${userEmail}
     WHERE invoices.id = ${params.id}
-      AND lower(invoices.user_email) = ${userEmail}
     LIMIT 1
   `;
 
@@ -104,17 +101,41 @@ export async function POST(
   const payoutsSetupUrl = '/dashboard/settings/payouts';
 
   try {
+    const workspaceContext = await ensureWorkspaceContextForCurrentUser();
+    if (!invoice.workspace_id) {
+      console.warn('[invoice checkout] workspace_id missing; failing closed', {
+        invoiceId: invoice.id,
+      });
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    if (invoice.workspace_id.trim() !== workspaceContext.workspaceId.trim()) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
+    const billing = await resolveStripeWorkspaceBillingForInvoice(invoice.id);
+    if (!billing) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    if (!billing.workspaceId) {
+      console.warn('[invoice checkout] workspace_id missing; failing closed', {
+        invoiceId: invoice.id,
+      });
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    if (billing.workspaceId !== invoice.workspace_id) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
     assertStripeConfig();
 
-    const ownerEmail = normalizeEmail(invoice.user_email);
-    const connectStatus = await fetchStripeConnectStatusForUser(ownerEmail);
-    const connectedAccountId = connectStatus.accountId;
+    const connectedAccountId = billing.stripeAccountId;
     if (!connectedAccountId) {
       return NextResponse.json(
         {
           ok: false,
           code: 'CONNECT_REQUIRED',
-          message: 'Payments are not enabled for this merchant yet.',
+          message:
+            'Online payments are not available yet. Ask the invoice owner to connect Stripe payouts.',
           actionUrl: payoutsSetupUrl,
         },
         { status: 409 },
@@ -173,8 +194,9 @@ export async function POST(
         amount: invoice.amount,
         invoice_number: invoice.invoice_number,
         customer_email: invoice.customer_email,
-        user_email: ownerEmail,
-        workspace_id: invoice.workspace_id,
+        workspace_id: billing.workspaceId,
+        stripe_account_id: connectedAccountId,
+        stripe_customer_id: billing.stripeCustomerId,
       },
       baseUrl,
     );
@@ -194,7 +216,7 @@ export async function POST(
         stripe_checkout_session_id = ${checkoutSession.id},
         stripe_payment_intent_id = coalesce(${paymentIntentId}, stripe_payment_intent_id)
       WHERE id = ${invoice.id}
-        AND lower(user_email) = ${userEmail}
+        AND workspace_id = ${billing.workspaceId}
       RETURNING id
     `;
     if (process.env.NODE_ENV !== 'production') {

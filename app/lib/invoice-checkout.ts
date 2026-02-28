@@ -1,7 +1,6 @@
 import { stripe } from '@/app/lib/stripe';
-import { fetchStripeConnectStatusForUser } from '@/app/lib/data';
 import {
-  computeInvoiceFeeBreakdownForUser,
+  computeInvoiceFeeBreakdownForWorkspace,
   type InvoiceFeeBreakdown,
 } from '@/app/lib/pricing-fees';
 import type Stripe from 'stripe';
@@ -11,8 +10,9 @@ export type InvoiceCheckoutInput = {
   amount: number;
   invoice_number: string | null;
   customer_email: string | null;
-  user_email: string;
-  workspace_id?: string | null;
+  workspace_id: string;
+  stripe_account_id: string;
+  stripe_customer_id?: string | null;
 };
 
 export type InvoiceCheckoutOptions = {
@@ -20,25 +20,18 @@ export type InvoiceCheckoutOptions = {
   cancelUrl?: string;
 };
 
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-async function getInvoiceOwnerStripeConfig(
-  userEmail: string,
+async function getInvoiceWorkspaceStripeConfig(
+  workspaceId: string,
   baseAmountCents: number,
 ) {
-  const normalizedEmail = normalizeEmail(userEmail);
-  const feeBreakdown = await computeInvoiceFeeBreakdownForUser(
-    normalizedEmail,
+  const feeBreakdown = await computeInvoiceFeeBreakdownForWorkspace(
+    workspaceId,
     baseAmountCents,
   );
-  const connectStatus = await fetchStripeConnectStatusForUser(normalizedEmail);
 
   return {
     feeBreakdown,
     applicationFeeAmount: feeBreakdown.platformFeeAmount,
-    connectAccountId: connectStatus.hasAccount ? connectStatus.accountId : null,
   };
 }
 
@@ -58,13 +51,11 @@ export async function createInvoiceCheckoutSession(
   const cancelUrl =
     options?.cancelUrl ??
     `${baseUrl}/dashboard/invoices/${invoice.id}?canceled=1`;
-  const ownerStripeConfig = await getInvoiceOwnerStripeConfig(
-    invoice.user_email,
+  const ownerStripeConfig = await getInvoiceWorkspaceStripeConfig(
+    invoice.workspace_id,
     invoice.amount,
   );
-  if (!ownerStripeConfig.connectAccountId) {
-    throw new Error('CONNECT_REQUIRED');
-  }
+
   const paymentIntentData: {
     metadata: Record<string, string>;
     application_fee_amount?: number;
@@ -72,8 +63,10 @@ export async function createInvoiceCheckoutSession(
     metadata: {
       invoiceId: invoice.id,
       invoice_id: invoice.id,
-      user_email: invoice.user_email,
-      ...(invoice.workspace_id ? { workspace_id: invoice.workspace_id } : {}),
+      workspace_id: invoice.workspace_id,
+      ...(invoice.stripe_customer_id
+        ? { workspace_stripe_customer_id: invoice.stripe_customer_id }
+        : {}),
     },
   };
 
@@ -104,14 +97,16 @@ export async function createInvoiceCheckoutSession(
       metadata: {
         invoiceId: invoice.id,
         invoice_id: invoice.id,
-        user_email: invoice.user_email,
-        ...(invoice.workspace_id ? { workspace_id: invoice.workspace_id } : {}),
+        workspace_id: invoice.workspace_id,
+        ...(invoice.stripe_customer_id
+          ? { workspace_stripe_customer_id: invoice.stripe_customer_id }
+          : {}),
       },
       payment_intent_data: paymentIntentData,
       success_url: successUrl,
       cancel_url: cancelUrl,
     },
-    { stripeAccount: ownerStripeConfig.connectAccountId },
+    { stripeAccount: invoice.stripe_account_id },
   );
 
   return {

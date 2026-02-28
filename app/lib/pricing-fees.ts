@@ -312,3 +312,32 @@ export async function computeInvoiceFeeBreakdownForUser(
     effectivePlan,
   );
 }
+
+export async function computeInvoiceFeeBreakdownForWorkspace(
+  workspaceId: string,
+  baseAmount: number,
+): Promise<InvoiceFeeBreakdown> {
+  const normalizedWorkspaceId = workspaceId.trim();
+  if (!normalizedWorkspaceId) {
+    return computeInvoiceFeeBreakdown(
+      baseAmount,
+      PRICING_FEE_CONFIG.processingUplift.enabledByDefault,
+      'free',
+    );
+  }
+
+  const [settings, billing] = await Promise.all([
+    fetchWorkspacePricingSettings(normalizedWorkspaceId),
+    resolveBillingContext(normalizedWorkspaceId),
+  ]);
+  const effectivePlan = resolveEffectivePlan(
+    billing.plan,
+    billing.subscriptionStatus,
+  );
+
+  return computeInvoiceFeeBreakdown(
+    baseAmount,
+    settings.processingUpliftEnabled,
+    effectivePlan,
+  );
+}

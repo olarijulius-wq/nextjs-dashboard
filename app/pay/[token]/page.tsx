@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import PublicPayButton from '@/app/ui/invoices/public-pay-button';
+import PublicRefundRequest from '@/app/ui/invoices/public-refund-request';
 import InvoiceStatus from '@/app/ui/invoices/status';
 import { formatCurrency } from '@/app/lib/utils';
 import { verifyPayToken } from '@/app/lib/pay-link';
@@ -8,6 +9,7 @@ import {
   getCompanyProfileForInvoiceWorkspace,
   MissingInvoiceWorkspaceError,
 } from '@/app/lib/public-branding';
+import { resolveStripeWorkspaceBillingForInvoice } from '@/app/lib/invoice-workspace-billing';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -62,7 +64,8 @@ type PageState =
         invoice_number: string | null;
         description: string | null;
         customer_name: string;
-        owner_connect_account_id: string | null;
+        has_connected_payout_account: boolean;
+        has_pending_refund_request: boolean;
         workspace_id: string | null;
         user_email: string | null;
         merchant_name: string | null;
@@ -99,7 +102,6 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
     invoice_number: string | null;
     description: string | null;
     customer_name: string;
-    owner_connect_account_id: string | null;
     workspace_id: string | null;
     user_email: string | null;
   }[]>`
@@ -116,12 +118,10 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
       invoices.invoice_number,
       invoices.description,
       customers.name AS customer_name,
-      users.stripe_connect_account_id AS owner_connect_account_id,
       invoices.workspace_id,
       invoices.user_email
     FROM invoices
     JOIN customers ON customers.id = invoices.customer_id
-    LEFT JOIN users ON lower(users.email) = lower(invoices.user_email)
     WHERE invoices.id = ${verification.payload.invoiceId}
     LIMIT 1
   `;
@@ -136,6 +136,25 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
   }
 
   let branding: Awaited<ReturnType<typeof getCompanyProfileForInvoiceWorkspace>>;
+  const billing = await resolveStripeWorkspaceBillingForInvoice(invoice.id);
+  if (!billing?.workspaceId || billing.workspaceId !== invoice.workspace_id) {
+    return {
+      kind: 'invalid',
+      title: 'Invoice unavailable',
+      description: 'This invoice no longer exists. Please contact the sender for help.',
+      contactEmail: null,
+    };
+  }
+
+  const hasConnectedPayoutAccount = Boolean(billing.stripeAccountId);
+  const [pendingRefund] = await sql<{ id: string }[]>`
+    select id
+    from public.refund_requests
+    where invoice_id = ${invoice.id}
+      and status = 'pending'
+    limit 1
+  `;
+
   try {
     branding = await getCompanyProfileForInvoiceWorkspace({
       invoiceId: invoice.id,
@@ -159,6 +178,8 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
       kind: 'paid',
       invoice: {
         ...invoice,
+        has_connected_payout_account: hasConnectedPayoutAccount,
+        has_pending_refund_request: Boolean(pendingRefund),
         merchant_name: branding.companyName,
         billing_email: branding.billingEmail,
       },
@@ -169,11 +190,13 @@ async function fetchPageState(token: string, searchParams?: { paid?: string; can
 
   return {
     kind: 'ready',
-    invoice: {
-      ...invoice,
-      merchant_name: branding.companyName,
-      billing_email: branding.billingEmail,
-    },
+      invoice: {
+        ...invoice,
+        has_connected_payout_account: hasConnectedPayoutAccount,
+        has_pending_refund_request: Boolean(pendingRefund),
+        merchant_name: branding.companyName,
+        billing_email: branding.billingEmail,
+      },
     isPaidBanner: searchParams?.paid === '1',
     isCanceledBanner: searchParams?.canceled === '1',
   };
@@ -212,8 +235,9 @@ export default async function Page(props: PageProps) {
   const payableAmount =
     typeof invoice.payable_amount === 'number' ? invoice.payable_amount : invoice.amount;
   const amountLabel = formatCurrency(payableAmount, invoice.currency);
-  const hasConnect = !!invoice.owner_connect_account_id?.trim();
-  const canPay = canPayInvoiceStatus(invoice.status) && hasConnect;
+  const canPay = canPayInvoiceStatus(invoice.status) && invoice.has_connected_payout_account;
+  const requiresConnectSetup =
+    canPayInvoiceStatus(invoice.status) && !invoice.has_connected_payout_account;
   const isPaid = state.kind === 'paid';
   const merchantName = invoice.merchant_name?.trim() || 'Merchant';
   const contactEmail = invoice.billing_email?.trim() || null;
@@ -261,7 +285,9 @@ export default async function Page(props: PageProps) {
             ) : (
               <div className="space-y-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                 <p className="text-sm text-neutral-700 dark:text-zinc-300">
-                  This invoice cannot be paid online right now.
+                  {requiresConnectSetup
+                    ? 'Online payments are not available yet. Ask the invoice owner to connect Stripe payouts.'
+                    : 'This invoice cannot be paid online right now.'}
                 </p>
                 <InvoiceStatus status={invoice.status} />
               </div>
@@ -288,6 +314,14 @@ export default async function Page(props: PageProps) {
               <p className="text-neutral-600 dark:text-zinc-400">{invoice.description}</p>
             ) : null}
           </div>
+          {isPaid ? (
+            <div className="mt-4">
+              <PublicRefundRequest
+                token={params.token}
+                hasPendingRequest={invoice.has_pending_refund_request}
+              />
+            </div>
+          ) : null}
         </section>
       </div>
     </main>
